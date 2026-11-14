@@ -99,3 +99,14 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ steps.v.outputs.versao }} -c \
             'uname -m; ffmpeg -version | head -1; deno --version | head -1; python -c "import yt_dlp;print(yt_dlp.version.__version__)"'
           echo "### Imagem publicada: \`ghcr.io/${{ github.repository }}:${{ steps.v.outputs.versao }}\` (também \`:latest\`)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Imagem pública? (a VPS baixa sem login)
+        if: github.event_name != 'pull_request'
+        run: |
+          docker logout ghcr.io
+          if docker manifest inspect ghcr.io/${{ github.repository }}:latest > /dev/null; then
+            echo "IMAGEM_PUBLICA"; echo "Imagem pública: a VPS baixa sem login." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "IMAGEM_PRIVADA"
+            echo "::warning::Imagem privada. Torne pública em github.com/users/${{ github.repository_owner }}/packages/container/ytbconverter/settings"
+          fi
