@@ -1,0 +1,101 @@
+name: Testes e imagem
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  testes:
+    name: Testes automáticos
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Rodar testes (cortes, formatos, erros, senha, cookies)
+        run: python tests/test_e2e.py
+
+  imagem:
+    name: Imagem amd64 + arm64
+    needs: testes
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versão
+        id: v
+        run: echo "versao=$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Construir imagem de teste (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ytbconversor:teste
+          build-args: APP_VERSION=${{ steps.v.outputs.versao }}
+
+      - name: Teste da imagem (saúde, interface e conversão)
+        run: |
+          set -e
+          docker run -d --name t -e YTDLP_AUTO_UPDATE=true -p 8080:8080 ytbconversor:teste
+          for i in $(seq 1 60); do curl -fs localhost:8080/api/health && break; sleep 2; done
+          curl -fs localhost:8080/ | grep -q "YTB"
+          curl -fs localhost:8080/api/config | grep -q '"format": "wav"'
+          docker exec t sh -c 'ffmpeg -version | head -1; deno --version | head -1; python -c "import yt_dlp;print(\"yt-dlp\", yt_dlp.version.__version__)"'
+          docker logs t
+
+      - name: Teste real no YouTube (informativo)
+        continue-on-error: true
+        run: |
+          set -e
+          code=$(curl -s -o /tmp/trecho.wav -w '%{http_code}' -X POST localhost:8080/api/download \
+            -H 'Content-Type: application/json' \
+            -d '{"url":"https://www.youtube.com/watch?v=DBElv4gvD7A","start":"00:00","end":"00:10"}')
+          echo "HTTP $code"
+          if [ "$code" = "200" ]; then
+            docker exec -i t ffprobe -v error -show_entries format=duration:stream=codec_name -of default=nw=1 - < /tmp/trecho.wav
+            echo "YOUTUBE_OK"
+          else
+            cat /tmp/trecho.wav; echo
+            echo "Obs.: servidores do GitHub costumam ser bloqueados pelo YouTube; na VPS use cookies se precisar."
+            exit 1
+          fi
+
+      - name: Publicar imagem (amd64 + arm64)
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: APP_VERSION=${{ steps.v.outputs.versao }}
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ steps.v.outputs.versao }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=YTB Conversor - trechos de audio do YouTube
+
+      - name: Teste da imagem arm64 publicada
+        if: github.event_name != 'pull_request'
+        run: |
+          docker run --rm --platform linux/arm64 -e YTDLP_AUTO_UPDATE=false --entrypoint sh \
+            ghcr.io/${{ github.repository }}:${{ steps.v.outputs.versao }} -c \
+            'uname -m; ffmpeg -version | head -1; deno --version | head -1; python -c "import yt_dlp;print(yt_dlp.version.__version__)"'
+          echo "### Imagem publicada: \`ghcr.io/${{ github.repository }}:${{ steps.v.outputs.versao }}\` (também \`:latest\`)" >> "$GITHUB_STEP_SUMMARY"

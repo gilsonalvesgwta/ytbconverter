@@ -1,0 +1,45 @@
+# YTB Conversor — stack para Portainer (Docker Swarm + Traefik)
+# Não publica nenhuma porta na VPS: o acesso é só pelo Traefik, no domínio abaixo.
+# Nomes próprios (ytbconversor) para não conflitar com outras stacks.
+version: "3.8"
+
+services:
+  app:
+    image: ${IMAGEM:-ghcr.io/gilsonalvesgwta/ytbconverter:latest}
+    environment:
+      - ACCESS_PASSWORD=${SENHA_ACESSO}
+      - MAX_CLIP_SECONDS=${TRECHO_MAXIMO_SEGUNDOS:-3600}
+      - MAX_CONCURRENT=${DOWNLOADS_SIMULTANEOS:-3}
+      - YTDLP_AUTO_UPDATE=true
+      - TZ=America/Sao_Paulo
+    volumes:
+      - dados:/data
+    networks:
+      - traefik
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 10s
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=${REDE_TRAEFIK:-Wtatechor3Net}
+        - traefik.http.routers.ytbconversor.rule=Host(`${DOMINIO:-ytbconversor.wtatech.com.br}`)
+        - traefik.http.routers.ytbconversor.entrypoints=${ENTRADA_TRAEFIK:-websecure}
+        - traefik.http.routers.ytbconversor.tls=true
+        - traefik.http.routers.ytbconversor.tls.certresolver=${RESOLVEDOR_TLS:-letsencryptresolver}
+        - traefik.http.routers.ytbconversor.service=ytbconversor
+        - traefik.http.services.ytbconversor.loadbalancer.server.port=8080
+
+volumes:
+  dados:
+
+networks:
+  traefik:
+    external: true
+    name: ${REDE_TRAEFIK:-Wtatechor3Net}

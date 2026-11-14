@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YTB Conversor · WTA</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="robots" content="noindex, nofollow">
+<style>
+  :root{
+    --navy:#051628; --navy-2:#0a2340; --navy-3:#123459; --line:#1d4370;
+    --orange:#FF6600; --orange-2:#ff8533; --text:#eaf1fa; --muted:#93a8c3;
+    --ok:#2ecc8f; --err:#ff5d5d; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--navy);color:var(--text);
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;font-size:15px}
+  body{min-height:100vh;background:
+    radial-gradient(900px 500px at 85% -10%, rgba(255,102,0,.13), transparent 60%),
+    radial-gradient(700px 400px at -10% 110%, rgba(40,110,200,.18), transparent 60%), var(--navy)}
+  .wrap{max-width:760px;margin:0 auto;padding:36px 18px 60px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+  .logo{width:42px;height:42px;border-radius:11px;background:var(--orange);display:grid;place-items:center;
+    box-shadow:0 6px 24px rgba(255,102,0,.35)}
+  h1{font-size:21px;margin:0;letter-spacing:.2px} h1 span{color:var(--orange)}
+  .sub{color:var(--muted);font-size:13px;margin-top:2px}
+  .card{background:linear-gradient(180deg,var(--navy-2),#081d36);border:1px solid var(--line);
+    border-radius:var(--radius);padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+  .row{display:flex;gap:10px}
+  input,select{width:100%;background:#061a30;border:1px solid var(--line);color:var(--text);
+    border-radius:10px;padding:12px 13px;font-size:15px;outline:none;transition:border .15s}
+  input:focus,select:focus{border-color:var(--orange)}
+  input::placeholder{color:#5f7898}
+  button{font:inherit;cursor:pointer;border:0;border-radius:10px}
+  .btn{background:var(--orange);color:#fff;font-weight:700;padding:12px 22px;white-space:nowrap;
+    display:inline-flex;align-items:center;gap:8px;transition:background .15s,transform .05s}
+  .btn:hover{background:var(--orange-2)} .btn:active{transform:translateY(1px)}
+  .btn:disabled{opacity:.6;cursor:wait}
+  .ghost{background:transparent;color:var(--muted);border:1px solid var(--line);padding:9px 13px;font-size:13px}
+  .ghost:hover{color:var(--text);border-color:var(--muted)}
+  .summary{margin-top:12px;color:var(--muted);font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .chip{background:var(--navy-3);border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--text)}
+  .chip b{color:var(--orange);font-weight:600}
+  .preview{display:none;margin-top:16px;gap:14px;align-items:center;background:#061a30;border:1px solid var(--line);
+    border-radius:12px;padding:10px}
+  .preview img{width:120px;height:68px;object-fit:cover;border-radius:8px;background:#0c2746;flex:none}
+  .preview .t{font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .preview .m{color:var(--muted);font-size:13px;margin-top:4px}
+  .status{margin-top:14px;display:none;padding:11px 13px;border-radius:10px;font-size:14px;line-height:1.45}
+  .status.info{display:block;background:rgba(255,102,0,.09);border:1px solid rgba(255,102,0,.35)}
+  .status.ok{display:block;background:rgba(46,204,143,.09);border:1px solid rgba(46,204,143,.4)}
+  .status.err{display:block;background:rgba(255,93,93,.09);border:1px solid rgba(255,93,93,.45)}
+  .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;
+    animation:r .8s linear infinite;display:inline-block;vertical-align:-2px}
+  @keyframes r{to{transform:rotate(360deg)}}
+  details{margin-top:18px}
+  details>summary{cursor:pointer;list-style:none;color:var(--text);font-weight:600;display:flex;align-items:center;gap:8px;
+    user-select:none}
+  details>summary::-webkit-details-marker{display:none}
+  details>summary .arr{transition:transform .15s;color:var(--orange)}
+  details[open]>summary .arr{transform:rotate(90deg)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+  .full{grid-column:1/-1}
+  label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:6px;font-weight:500}
+  .hint{font-size:12px;color:#6f88a8;margin-top:5px}
+  .folder{display:flex;gap:8px;align-items:center}
+  .folder .path{flex:1;background:#061a30;border:1px dashed var(--line);border-radius:10px;padding:11px 13px;color:var(--text);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .check{display:flex;gap:9px;align-items:center;color:var(--text);font-size:14px}
+  .check input{width:17px;height:17px;accent-color:var(--orange)}
+  .actions{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:16px;flex-wrap:wrap}
+  h3{font-size:14px;margin:26px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+  .hist{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+  .hist li{background:var(--navy-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px;
+    display:flex;justify-content:space-between;gap:10px}
+  .hist .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hist .w{color:var(--muted);white-space:nowrap}
+  .admin{margin-top:10px;padding-top:14px;border-top:1px solid var(--line)}
+  .pill{font-size:12px;border-radius:999px;padding:2px 9px;margin-left:6px}
+  .pill.on{background:rgba(46,204,143,.15);color:var(--ok)} .pill.off{background:rgba(147,168,195,.15);color:var(--muted)}
+  footer{margin-top:34px;text-align:center;color:#58708f;font-size:12px}
+  .modal{position:fixed;inset:0;background:rgba(2,10,20,.75);display:none;place-items:center;padding:18px;z-index:9}
+  .modal.show{display:grid}
+  .modal .card{width:100%;max-width:380px}
+  @media(max-width:600px){.row{flex-direction:column}.grid{grid-template-columns:1fr}.btn{justify-content:center}
+    .preview img{width:96px;height:54px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+    <div><h1>YTB <span>Conversor</span></h1><div class="sub">Baixe trechos de áudio de vídeos do YouTube</div></div>
+  </header>
+
+  <main class="card">
+    <form id="form" autocomplete="off">
+      <div class="row">
+        <input id="url" type="url" inputmode="url" placeholder="Cole aqui o link do vídeo do YouTube" required>
+        <button class="btn" id="go" type="submit">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+          <span>Baixar</span>
+        </button>
+      </div>
+      <div class="summary" id="summary"></div>
+      <div class="preview" id="preview"><img id="pv-img" alt=""><div><div class="t" id="pv-title"></div><div class="m" id="pv-meta"></div></div></div>
+      <div class="status" id="status"></div>
+
+      <details id="settings">
+        <summary><span class="arr">▶</span> Configurações</summary>
+        <div class="grid">
+          <div><label for="start">Início</label><input id="start" placeholder="00:00"><div class="hint">mm:ss ou hh:mm:ss</div></div>
+          <div><label for="end">Fim</label><input id="end" placeholder="02:00"><div class="hint">Deixe vazio para ir até o fim do vídeo</div></div>
+          <div><label for="format">Formato do áudio</label><select id="format"></select></div>
+          <div><label for="bitrate">Qualidade</label><select id="bitrate"></select><div class="hint" id="bitrate-hint"></div></div>
+          <div><label for="samplerate">Taxa de amostragem</label>
+            <select id="samplerate"><option value="">Original do vídeo</option><option value="48000">48.000 Hz</option><option value="44100">44.100 Hz (CD)</option><option value="22050">22.050 Hz</option><option value="16000">16.000 Hz (voz / transcrição)</option></select></div>
+          <div><label for="channels">Canais</label>
+            <select id="channels"><option value="">Original do vídeo</option><option value="2">Estéreo</option><option value="1">Mono</option></select></div>
+          <div class="full"><label for="filename">Nome do arquivo (opcional)</label><input id="filename" placeholder="Vazio = título do vídeo + intervalo"></div>
+          <div class="full">
+            <label>Pasta de destino</label>
+            <div class="folder"><div class="path" id="folder-path">Downloads (padrão do navegador)</div>
+              <button type="button" class="ghost" id="pick">Escolher pasta…</button>
+              <button type="button" class="ghost" id="unpick" hidden>Padrão</button></div>
+            <div class="hint" id="folder-hint"></div>
+          </div>
+          <div class="full"><label class="check"><input type="checkbox" id="remember"> Manter estas configurações nos próximos acessos</label>
+            <div class="hint">Desmarcado: toda vez que abrir, volta para 00:00 → 02:00 em WAV.</div></div>
+        </div>
+        <div class="actions">
+          <button type="button" class="ghost" id="reset">Restaurar padrão (00:00 → 02:00 · WAV)</button>
+        </div>
+
+        <div class="admin" id="admin">
+          <label>Cookies do YouTube <span class="pill off" id="ck-pill">não configurado</span></label>
+          <div class="hint" style="margin-bottom:8px">Só é necessário se aparecer o aviso de "verificação de robô". Exporte o arquivo <b>cookies.txt</b> do navegador (veja o README) e envie aqui.</div>
+          <div class="folder"><input type="file" id="ck-file" accept=".txt,text/plain" style="padding:9px">
+            <button type="button" class="ghost" id="ck-del" hidden>Remover</button></div>
+          <div class="hint" id="ck-hint"></div>
+        </div>
+      </details>
+    </form>
+  </main>
+
+  <h3 id="hist-title" hidden>Baixados nesta sessão</h3>
+  <ul class="hist" id="hist"></ul>
+
+  <footer>WTA Tech · YTB Conversor <span id="ver"></span><a href="#" id="logout" style="color:#58708f" hidden> · sair</a></footer>
+</div>
+
+<div class="modal" id="login">
+  <form class="card" id="login-form">
+    <h1 style="font-size:18px;margin-bottom:6px">Acesso</h1>
+    <div class="sub" style="margin-bottom:14px">Digite a senha de acesso deste sistema.</div>
+    <input type="password" id="login-key" placeholder="Senha" autocomplete="current-password">
+    <div class="status" id="login-status"></div>
+    <button class="btn" style="width:100%;justify-content:center;margin-top:14px">Entrar</button>
+  </form>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const DEFAULTS = { start: "00:00", end: "02:00", format: "wav", bitrate: "192", samplerate: "", channels: "", filename: "" };
+  const FIELDS = ["start", "end", "format", "bitrate", "samplerate", "channels", "filename"];
+  const LS_SETTINGS = "ytbc.settings", LS_REMEMBER = "ytbc.remember", LS_KEY = "ytbc.key";
+  let config = { formats: [], bitrates: [], auth_required: false };
+  let dirHandle = null;
+  let lastInfoUrl = "";
+  const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+               set(k,v){ try { localStorage.setItem(k,v); } catch {} },
+               del(k){ try { localStorage.removeItem(k); } catch {} } };
+
+  // ---------- IndexedDB p/ guardar a pasta escolhida
+  const idb = (mode, fn) => new Promise((res, rej) => {
+    const open = indexedDB.open("ytbc", 1);
+    open.onupgradeneeded = () => open.result.createObjectStore("kv");
+    open.onsuccess = () => { const tx = open.result.transaction("kv", mode); const r = fn(tx.objectStore("kv"));
+      tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); };
+    open.onerror = () => rej(open.error);
+  });
+  const saveDir = (h) => idb("readwrite", s => h ? s.put(h, "dir") : s.delete("dir")).catch(() => {});
+  const loadDir = () => idb("readonly", s => s.get("dir")).catch(() => null);
+
+  // ---------- helpers
+  const headers = () => { const k = ls.get(LS_KEY); return k ? { "X-Access-Key": k } : {}; };
+  function setStatus(kind, html, el = $("status")) { el.className = "status " + (kind || ""); el.innerHTML = html || ""; }
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const fmtSize = (b) => b > 1048576 ? (b/1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b/1024)) + " KB";
+
+  function current() { const o = {}; FIELDS.forEach(f => o[f] = $(f).value.trim()); return o; }
+  function apply(s) { FIELDS.forEach(f => { if (s[f] !== undefined) $(f).value = s[f]; }); onFormat(); renderSummary(); }
+
+  function onFormat() {
+    const f = config.formats.find(x => x.id === $("format").value);
+    const lossy = f ? f.lossy : false;
+    $("bitrate").disabled = !lossy;
+    $("bitrate-hint").textContent = lossy ? "Maior = melhor qualidade e arquivo maior" : "Formato sem perda: qualidade máxima";
+  }
+
+  function renderSummary() {
+    const s = current();
+    const fmt = (config.formats.find(x => x.id === s.format) || { label: s.format.toUpperCase() }).label.split(" ")[0];
+    const parts = [
+      `<span class="chip">Trecho <b>${esc(s.start || "00:00")} → ${esc(s.end || "fim")}</b></span>`,
+      `<span class="chip">Formato <b>${esc(fmt)}</b>${$("bitrate").disabled ? "" : " · " + esc(s.bitrate) + " kbps"}</span>`,
+      `<span class="chip">Pasta <b>${dirHandle ? esc(dirHandle.name) : "Downloads"}</b></span>`,
+    ];
+    $("summary").innerHTML = parts.join("");
+  }
+
+  function persist() {
+    if ($("remember").checked) ls.set(LS_SETTINGS, JSON.stringify(current())); else ls.del(LS_SETTINGS);
+    renderSummary();
+  }
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: { ...(opts.headers || {}), ...headers() } });
+    if (res.status === 401 && config.auth_required) { showLogin(); throw new Error("Digite a senha de acesso."); }
+    return res;
+  }
+
+  // ---------- preview
+  let infoTimer = null;
+  function scheduleInfo() {
+    clearTimeout(infoTimer);
+    const url = $("url").value.trim();
+    if (!/youtu\.?be/i.test(url) || url === lastInfoUrl) return;
+    infoTimer = setTimeout(() => loadInfo(url), 450);
+  }
+  async function loadInfo(url) {
+    lastInfoUrl = url;
+    $("preview").style.display = "none";
+    try {
+      const res = await api("/api/info", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+      const data = await res.json();
+      if (url !== $("url").value.trim()) return;
+      if (!data.ok) { setStatus("err", esc(data.error)); return; }
+      if ($("status").classList.contains("err")) setStatus("");
+      $("pv-img").src = data.thumbnail || "";
+      $("pv-img").style.display = data.thumbnail ? "" : "none";
+      $("pv-title").textContent = data.title;
+      $("pv-meta").textContent = [data.uploader, data.duration_text && "Duração " + data.duration_text].filter(Boolean).join(" · ");
+      $("preview").style.display = "flex";
+    } catch (e) { /* silencioso: o download mostra o erro */ }
+  }
+
+  // ---------- download
+  async function ensureDirPermission() {
+    if (!dirHandle) return false;
+    const o = { mode: "readwrite" };
+    if ((await dirHandle.queryPermission(o)) === "granted") return true;
+    return (await dirHandle.requestPermission(o)) === "granted";
+  }
+
+  async function download(ev) {
+    ev.preventDefault();
+    const url = $("url").value.trim();
+    if (!url) { $("url").focus(); return; }
+    const opts = current();
+    let useDir = false;
+    if (dirHandle) {
+      try { useDir = await ensureDirPermission(); } catch { useDir = false; }
+      if (!useDir) setStatus("info", "Sem permissão para a pasta escolhida; o arquivo vai para Downloads.");
+    }
+    $("go").disabled = true;
+    const t0 = Date.now();
+    const tick = setInterval(() => setStatus("info", `<span class="spin"></span>&nbsp; Baixando e convertendo o trecho… ${Math.round((Date.now()-t0)/1000)}s`), 500);
+    setStatus("info", `<span class="spin"></span>&nbsp; Baixando e convertendo o trecho…`);
+    try {
+      const res = await api("/api/download", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, ...opts }) });
+      if (!res.ok) {
+        let msg = "Falha no download (" + res.status + ").";
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const name = decodeURIComponent(res.headers.get("X-Filename") || "audio." + opts.format);
+      let where = "Downloads";
+      if (useDir) {
+        try {
+          const fh = await dirHandle.getFileHandle(name, { create: true });
+          const w = await fh.createWritable(); await w.write(blob); await w.close();
+          where = dirHandle.name;
+        } catch (e) { saveBlob(blob, name); where = "Downloads (não consegui gravar na pasta escolhida)"; }
+      } else saveBlob(blob, name);
+      setStatus("ok", `✔ Pronto! <b>${esc(name)}</b> (${fmtSize(blob.size)}) salvo em <b>${esc(where)}</b>.`);
+      addHistory(name, blob.size, where);
+    } catch (e) {
+      setStatus("err", esc(e.message || "Erro inesperado."));
+    } finally { clearInterval(tick); $("go").disabled = false; }
+  }
+
+  function saveBlob(blob, name) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  }
+
+  function addHistory(name, size, where) {
+    $("hist-title").hidden = false;
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="n" title="${esc(name)}">${esc(name)}</span><span class="w">${fmtSize(size)} · ${esc(where.split(" (")[0])}</span>`;
+    $("hist").prepend(li);
+  }
+
+  // ---------- pasta
+  async function pickFolder() {
+    try {
+      const h = await window.showDirectoryPicker({ id: "ytbc", mode: "readwrite", startIn: "downloads" });
+      dirHandle = h; await saveDir(h); renderFolder();
+    } catch (e) { if (e.name !== "AbortError") setStatus("err", "Não consegui usar essa pasta: " + esc(e.message)); }
+  }
+  function renderFolder() {
+    $("folder-path").textContent = dirHandle ? "📁 " + dirHandle.name : "Downloads (padrão do navegador)";
+    $("unpick").hidden = !dirHandle;
+    renderSummary();
+  }
+
+  // ---------- cookies
+  function renderCookies() {
+    const on = !!config.cookies_configured;
+    $("ck-pill").className = "pill " + (on ? "on" : "off");
+    $("ck-pill").textContent = on ? "configurado" : "não configurado";
+    $("ck-del").hidden = !on || !config.cookies_editable;
+    $("ck-file").disabled = !config.cookies_editable;
+    $("ck-hint").textContent = config.cookies_editable ? "" : "Para enviar cookies, defina a variável SENHA_ACESSO na stack (protege o sistema com senha).";
+  }
+  async function uploadCookies() {
+    const f = $("ck-file").files[0]; if (!f) return;
+    const text = await f.text();
+    try {
+      const res = await api("/api/cookies", { method: "POST", headers: { "Content-Type": "text/plain" }, body: text });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error);
+      config.cookies_configured = true; renderCookies(); $("ck-hint").textContent = "Cookies salvos.";
+    } catch (e) { $("ck-hint").textContent = e.message; }
+    $("ck-file").value = "";
+  }
+  async function deleteCookies() {
+    await api("/api/cookies", { method: "DELETE" });
+    config.cookies_configured = false; renderCookies(); $("ck-hint").textContent = "Cookies removidos.";
+  }
+
+  // ---------- login
+  function showLogin() { $("login").classList.add("show"); setTimeout(() => $("login-key").focus(), 50); }
+  async function doLogin(ev) {
+    ev.preventDefault();
+    const key = $("login-key").value;
+    const res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) });
+    if (res.ok) { ls.set(LS_KEY, key); $("login").classList.remove("show"); setStatus("", "", $("login-status")); $("logout").hidden = false; }
+    else setStatus("err", "Senha incorreta.", $("login-status"));
+  }
+
+  // ---------- init
+  async function init() {
+    try { config = await (await fetch("/api/config")).json(); } catch {}
+    $("ver").textContent = config.version ? "v" + config.version : "";
+    $("format").innerHTML = (config.formats.length ? config.formats : [{ id: "wav", label: "WAV" }])
+      .map(f => `<option value="${f.id}">${esc(f.label)}</option>`).join("");
+    $("bitrate").innerHTML = (config.bitrates.length ? config.bitrates : [192])
+      .map(b => `<option value="${b}">${b} kbps</option>`).join("");
+
+    const remember = ls.get(LS_REMEMBER) === "1";
+    $("remember").checked = remember;
+    let saved = {};
+    if (remember) { try { saved = JSON.parse(ls.get(LS_SETTINGS) || "{}"); } catch {} }
+    apply({ ...DEFAULTS, ...saved });
+
+    if (!("showDirectoryPicker" in window)) {
+      $("pick").disabled = true;
+      $("folder-hint").textContent = "Escolher pasta funciona no Chrome ou Edge no computador. Aqui, o arquivo vai para a pasta de downloads do navegador.";
+    } else {
+      $("folder-hint").textContent = "Padrão: pasta Downloads. A pasta escolhida fica guardada neste navegador.";
+      dirHandle = (await loadDir()) || null; renderFolder();
+    }
+    renderCookies();
+    if (config.auth_required) {
+      if (!ls.get(LS_KEY)) showLogin(); else $("logout").hidden = false;
+    }
+    const q = new URLSearchParams(location.search).get("url");
+    if (q) { $("url").value = q; scheduleInfo(); }
+    $("url").focus();
+  }
+
+  $("form").addEventListener("submit", download);
+  $("url").addEventListener("input", scheduleInfo);
+  $("url").addEventListener("paste", () => setTimeout(scheduleInfo, 0));
+  FIELDS.forEach(f => $(f).addEventListener("input", persist));
+  $("format").addEventListener("change", () => { onFormat(); persist(); });
+  $("remember").addEventListener("change", () => { ls.set(LS_REMEMBER, $("remember").checked ? "1" : "0"); persist(); });
+  $("reset").addEventListener("click", () => { apply(DEFAULTS); persist(); });
+  $("pick").addEventListener("click", pickFolder);
+  $("unpick").addEventListener("click", async () => { dirHandle = null; await saveDir(null); renderFolder(); });
+  $("ck-file").addEventListener("change", uploadCookies);
+  $("ck-del").addEventListener("click", deleteCookies);
+  $("login-form").addEventListener("submit", doLogin);
+  $("logout").addEventListener("click", (e) => { e.preventDefault(); ls.del(LS_KEY); showLogin(); });
+  init();
+})();
+</script>
+</body>
+</html>
