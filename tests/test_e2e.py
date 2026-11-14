@@ -23,6 +23,8 @@ SERVER = os.path.join(ROOT, "app", "server.py")
 TMP = tempfile.mkdtemp(prefix="ytbc-test-")
 SOURCE = os.path.join(TMP, "Música de Teste ção.m4a")  # nome com acento de propósito
 SOURCE_URL = "file://" + SOURCE
+SHORT = os.path.join(TMP, "curto.m4a")  # vídeo de 50 s
+SHORT_URL = "file://" + SHORT
 PASSWORD = "senha-teste-123"
 
 
@@ -115,6 +117,13 @@ class TestDownloads(Base):
         name = urllib.parse.unquote(hdrs["X-Filename"])
         self.assertEqual(name, "Música de Teste ção (00.00 a 02.00).wav")
         self.assertIn("filename*=UTF-8''", hdrs["Content-Disposition"])
+
+    def test_default_on_short_video_takes_whole_video(self):
+        # padrão = do início até 2 min OU MENOS: vídeo de 50 s baixa os 50 s, sem erro
+        st, hdrs, body = request(self.base, "/api/download", {"url": SHORT_URL})
+        self.assertEqual(st, 200, body[:300])
+        self.assertAlmostEqual(probe(body, ".wav")[0], 50, delta=0.15)
+        self.assertEqual(urllib.parse.unquote(hdrs["X-Filename"]), "curto (00.00 a 00.50).wav")
 
     def test_all_formats_custom_range(self):
         expected = {"wav": "pcm_s16le", "mp3": "mp3", "m4a": "aac", "flac": "flac", "ogg": "vorbis", "opus": "opus"}
@@ -233,6 +242,8 @@ def setUpModule():
                     "-f", "lavfi", "-i", "sine=frequency=660:sample_rate=44100:duration=300",
                     "-filter_complex", "[0:a][1:a]amerge=inputs=2[a]", "-map", "[a]",
                     "-c:a", "aac", "-b:a", "128k", SOURCE], check=True)
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+                    "-i", "sine=frequency=500:duration=50", "-c:a", "aac", SHORT], check=True)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 Sistema web para baixar **trechos de áudio de vídeos do YouTube**.
 Endereço: **https://ytbconversor.wtatech.com.br**
 
-- Cole o link e clique em **Baixar**: o padrão já baixa de **00:00 a 02:00 em WAV**, na pasta **Downloads**.
+- Cole o link e clique em **Baixar**: o padrão já baixa **do início até 2 minutos (ou o vídeo inteiro, se for menor) em WAV**, na pasta **Downloads**.
 - Em **Configurações** você muda o início e o fim, o formato (WAV, MP3, M4A, FLAC, OGG, OPUS), a qualidade, a taxa de amostragem, mono ou estéreo, o nome do arquivo e a pasta de destino.
 - A opção "Manter estas configurações" guarda suas escolhas no navegador. Desmarcada, o sistema sempre volta ao padrão.
 - A pasta de destino personalizada funciona no **Chrome ou Edge no computador** (o navegador pede permissão uma vez). Nos outros navegadores, o arquivo vai para a pasta de downloads do navegador.
@@ -88,7 +88,7 @@ Sem `start`, `end` e `format`, vale o padrão (00:00 a 02:00, WAV).
 
 - `app/server.py`: servidor (só biblioteca padrão do Python + yt-dlp + ffmpeg). Corta direto do link do áudio com ffmpeg; se falhar, usa o próprio yt-dlp como plano B.
 - `app/static/index.html`: interface.
-- `tests/test_e2e.py`: 17 testes de ponta a ponta sem internet (`python3 tests/test_e2e.py`, precisa de ffmpeg).
+- `tests/test_e2e.py`: 18 testes de ponta a ponta sem internet (`python3 tests/test_e2e.py`, precisa de ffmpeg).
 - A cada envio para `main`, o GitHub Actions roda os testes, testa a imagem e publica `ghcr.io/gilsonalvesgwta/ytbconverter:latest` para **amd64 e arm64** (a VPS é ARM).
 - Só aceita links do YouTube (impede que o sistema seja usado para acessar serviços internos da VPS).
 - Atenção ao proxy do Cloudflare: ele corta respostas que levam mais de 100 segundos. Trechos curtos ficam prontos em poucos segundos; trechos muito longos em WAV podem passar disso.
