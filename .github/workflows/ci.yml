@@ -53,12 +53,12 @@ jobs:
       - name: Teste da imagem (saúde, interface e conversão)
         run: |
           set -e
-          docker run -d --name t -e YTDLP_AUTO_UPDATE=true -p 8080:8080 ytbconversor:teste
-          for i in $(seq 1 60); do curl -fs localhost:8080/api/health && break; sleep 2; done
+          docker run -d --name ytbc -e YTDLP_AUTO_UPDATE=true -p 8080:8080 ytbconversor:teste
+          for i in $(seq 1 60); do curl -fs localhost:8080/api/health && break; sleep 2; done; curl -fs localhost:8080/api/health
           curl -fs localhost:8080/ | grep -q "YTB"
           curl -fs localhost:8080/api/config | grep -q '"format": "wav"'
-          docker exec t sh -c 'ffmpeg -version | head -1; deno --version | head -1; python -c "import yt_dlp;print(\"yt-dlp\", yt_dlp.version.__version__)"'
-          docker logs t
+          docker exec ytbc sh -c 'ffmpeg -version | head -1; deno --version | head -1; python -c "import yt_dlp;print(\"yt-dlp\", yt_dlp.version.__version__)"'
+          docker logs ytbc
 
       - name: Teste real no YouTube (informativo)
         continue-on-error: true
@@ -69,7 +69,7 @@ jobs:
             -d '{"url":"https://www.youtube.com/watch?v=DBElv4gvD7A","start":"00:00","end":"00:10"}')
           echo "HTTP $code"
           if [ "$code" = "200" ]; then
-            docker exec -i t ffprobe -v error -show_entries format=duration:stream=codec_name -of default=nw=1 - < /tmp/trecho.wav
+            docker exec -i ytbc ffprobe -v error -show_entries format=duration:stream=codec_name -of default=nw=1 - < /tmp/trecho.wav
             echo "YOUTUBE_OK"
           else
             cat /tmp/trecho.wav; echo
