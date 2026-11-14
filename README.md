@@ -8,6 +8,8 @@ Endereço: **https://ytbconversor.wtatech.com.br**
 - A opção "Manter estas configurações" guarda suas escolhas no navegador. Desmarcada, o sistema sempre volta ao padrão.
 - A pasta de destino personalizada funciona no **Chrome ou Edge no computador** (o navegador pede permissão uma vez). Nos outros navegadores, o arquivo vai para a pasta de downloads do navegador.
 
+**Rapidez:** o sistema não baixa o vídeo. Ele pega só a faixa de áudio (sem imagem), pula direto para o início pedido e lê só os bytes do trecho, convertendo ao mesmo tempo. Num áudio de 2 horas, um trecho de 2 minutos fica pronto em menos de 1 segundo de processamento, esteja no começo, no meio ou no fim. Ao colar o link, o sistema já lê os dados do vídeo enquanto você confere a prévia, e o clique em **Baixar** começa direto no corte.
+
 O sistema é **independente** dos outros da VPS (n8n, CRM etc.): não publica nenhuma porta, só recebe acesso pelo Traefik no domínio próprio, e usa nomes exclusivos (`ytbconversor`) de stack, rota e volume.
 
 ---
