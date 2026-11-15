@@ -136,7 +136,7 @@ def _cookie_copy():
     """yt-dlp regrava o arquivo de cookies; usamos uma cópia temporária."""
     if not os.path.isfile(COOKIES_FILE):
         return None
-    fd, path = tempfile.mkstemp(prefix="cookies-", suffix=".txt")
+    fd, path = tempfile.mkstemp(prefix=tr.WORK_PREFIX + "cookies-", suffix=".txt")
     os.close(fd)
     shutil.copyfile(COOKIES_FILE, path)
     return path
@@ -534,7 +534,7 @@ class Handler(BaseHTTPRequestHandler):
         opts = parse_options(params)
         if not _slots.acquire(timeout=1):
             raise UserError("O servidor está ocupado com outros downloads. Tente de novo em instantes.", 429)
-        workdir = tempfile.mkdtemp(prefix="ytbc-")
+        workdir = tempfile.mkdtemp(prefix=tr.WORK_PREFIX + "clip-")
         try:
             path, filename, mime = make_clip(url, opts, workdir)
             size = os.path.getsize(path)
@@ -582,6 +582,7 @@ def main():
         os.makedirs(DATA_DIR, exist_ok=True)
     except OSError:
         log.warning("não consegui criar %s (cookies não serão salvos)", DATA_DIR)
+    tr.startup_cleanup()
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     httpd.daemon_threads = True
     log.info("YTB Conversor %s ouvindo na porta %d (senha: %s, trecho máx.: %ss)", VERSION, PORT,

@@ -116,6 +116,7 @@ class TestOpenAIEngine(base.Base):
         self.assertEqual((s["engine"], s["local_model"], s["openai_model"], s["language"]),
                          ("local", "small", "gpt-4o-mini-transcribe", "pt"))
         self.assertFalse(s["openai_key_set"])
+        self.assertFalse(s["skip_silence"])                                 # padrão: áudio inteiro
         self.assertEqual(self.save({"engine": "openai"})[0], 400)            # sem chave
         self.assertEqual(self.save({"openai_key": "abc"})[0], 400)           # formato inválido
         self.assertEqual(self.save({"local_model": "gigante"})[0], 400)
@@ -168,6 +169,9 @@ class TestOpenAIEngine(base.Base):
         # arquivo enviado é apagado depois
         st, _, body = base.request(self.base, "/api/transcribe", {"upload_id": uid}, headers=AUTH)
         self.assertEqual(st, 404)
+        # nada fica guardado: nem o envio, nem pastas temporárias
+        self.assertEqual(os.listdir(self.env["UPLOAD_DIR"]), [])
+        self.assertEqual([n for n in os.listdir(tempfile.gettempdir()) if n.startswith("ytbcw-")], [])
 
     def test_3_language_auto_and_youtube_link_path(self):
         self.save({"engine": "openai", "openai_key": GOOD_KEY})
@@ -204,6 +208,33 @@ class TestOpenAIEngine(base.Base):
         self.save({"engine": "openai", "openai_key": GOOD_KEY})
         st, _, body = self.save({"engine": "local", "clear_openai_key": True})
         self.assertFalse(json.loads(body)["openai_key_set"])
+
+
+class TestNoStorageLeft(base.Base):
+    """Sobras de execuções anteriores são apagadas ao iniciar; envios abandonados somem sozinhos."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.updir = tempfile.mkdtemp(dir=TMP)
+        open(os.path.join(cls.updir, "sobra-antiga"), "wb").write(b"x" * 1000)
+        cls.leftover = tempfile.mkdtemp(prefix="ytbcw-tr-")
+        open(os.path.join(cls.leftover, "audio.wav"), "wb").write(b"x" * 1000)
+        cls.env = {"ACCESS_PASSWORD": PASSWORD, "UPLOAD_DIR": cls.updir,
+                   "UPLOAD_IDLE_SECONDS": "1", "CLEANUP_INTERVAL": "1"}
+        super().setUpClass()
+
+    def test_startup_cleanup(self):
+        self.assertEqual(os.listdir(self.updir), [])
+        self.assertFalse(os.path.exists(self.leftover))
+
+    def test_abandoned_upload_removed(self):
+        st, _, body = base.request(self.base, "/api/upload/init", {"name": "grande.mp4", "size": 3000}, headers=AUTH)
+        uid = json.loads(body)["upload_id"]
+        self.assertEqual(base.request(self.base, f"/api/upload/{uid}?offset=0", raw=b"x" * 1000, method="PUT", headers=AUTH)[0], 200)
+        self.assertEqual(len(os.listdir(self.updir)), 1)
+        time.sleep(3.5)                                                     # usuário fechou o navegador
+        self.assertEqual(os.listdir(self.updir), [])
+        self.assertEqual(base.request(self.base, f"/api/upload/{uid}?offset=1000", raw=b"x", method="PUT", headers=AUTH)[0], 404)
 
 
 class TestKeyNeedsPassword(base.Base):
@@ -245,6 +276,38 @@ class TestLocalEngine(base.Base):
         text = job["text"].lower()
         hits = [w for w in ["bom dia", "todos", "consórcio", "planejamento", "financeiro", "casa"] if w in text]
         self.assertGreaterEqual(len(hits), 3, text)
+
+    def test_long_audio_with_music_is_complete(self):
+        """Áudio de ~2,5 min com música o tempo todo e falas no começo, meio e fim:
+        a transcrição precisa trazer as três partes (antes pulava o que tinha música)."""
+        model = os.environ.get("TEST_WHISPER_MODEL", "base")
+        base.request(self.base, "/api/transcribe/settings", {"engine": "local", "local_model": model, "skip_silence": False}, headers=AUTH)
+        falas = [(0, "Primeira parte. Bom dia a todos, sejam bem vindos."),
+                 (70, "Segunda parte. Agora vamos falar de planejamento financeiro."),
+                 (135, "Terceira parte. Muito obrigado e até a próxima.")]
+        inputs, filters = [], []
+        for i, (t, frase) in enumerate(falas):
+            w = os.path.join(TMP, f"fala{i}.wav")
+            subprocess.run(["espeak-ng", "-v", "pt-br", "-s", "130", "-w", w, frase], check=True)
+            inputs += ["-i", w]
+            filters.append(f"[{i + 1}:a]aresample=16000,adelay={t * 1000}|{t * 1000}[v{i}]")
+        musica = ("aevalsrc='0.05*(sin(220*2*PI*t)+sin(277*2*PI*t)+sin(330*2*PI*t))*(0.6+0.4*sin(2*PI*2*t))'"
+                  ":s=16000:d=150")
+        longo = os.path.join(TMP, "compilacao.mp3")
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", musica] + inputs +
+                       ["-filter_complex", ";".join(filters) + ";[0:a][v0][v1][v2]amix=inputs=4:duration=first:normalize=0[a]",
+                        "-map", "[a]", "-c:a", "libmp3lame", "-b:a", "96k", longo], check=True)
+        uid = upload(self.base, longo, chunk=200000)
+        st, _, body = base.request(self.base, "/api/transcribe", {"upload_id": uid}, headers=AUTH)
+        job = wait_job(self.base, json.loads(body)["job"]["id"], timeout=1200)
+        print("\nTRANSCRICAO_MUSICA:", job.get("text") or job.get("error"))
+        self.assertEqual(job["status"], "done", job)
+        text = job["text"].lower()
+        partes = {"começo": ["primeira", "bom dia", "bem vindo", "bem-vindo"],
+                  "meio": ["segunda", "planejamento", "financeiro"],
+                  "fim": ["terceira", "obrigado", "próxima"]}
+        faltando = [p for p, ws in partes.items() if not any(w in text for w in ws)]
+        self.assertEqual(faltando, [], text)
 
 
 if __name__ == "__main__":

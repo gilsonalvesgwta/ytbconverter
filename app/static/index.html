@@ -234,6 +234,8 @@
             <label for="tr-openai-model" style="margin-top:12px">Modelo da OpenAI</label><select id="tr-openai-model"></select>
           </div>
           <div class="full"><label for="tr-default-lang">Idioma padrão</label><select id="tr-default-lang"></select></div>
+          <div class="full" id="tr-skip-box"><label class="check"><input type="checkbox" id="tr-skip"> Pular trechos sem fala (modo rápido)</label>
+            <div class="hint">Deixe desmarcado para transcrever o áudio inteiro, inclusive músicas. Marque só para palestras e reuniões com muitas pausas: fica mais rápido, mas pode pular canto e falas com música de fundo.</div></div>
         </div>
         <div class="actions">
           <button type="button" class="ghost" id="tr-clear-key" hidden>Apagar chave salva</button>
@@ -547,6 +549,7 @@
     $("tr-local-model").innerHTML = opt(o.local_models, settings.local_model);
     $("tr-openai-model").innerHTML = opt(o.openai_models, settings.openai_model);
     document.querySelectorAll('input[name="tr-engine"]').forEach(r => r.checked = r.value === settings.engine);
+    $("tr-skip").checked = !!settings.skip_silence;
     $("tr-key").value = "";
     $("tr-key").placeholder = settings.openai_key_set ? "Chave salva (" + settings.openai_key_hint + ") — digite outra para trocar" : "sk-...";
     $("tr-clear-key").hidden = !settings.openai_key_set;
@@ -557,18 +560,19 @@
   function engineSel() { const r = document.querySelector('input[name="tr-engine"]:checked'); return r ? r.value : "local"; }
   function toggleEngine() {
     const e = engineSel();
-    $("tr-local-box").hidden = e !== "local"; $("tr-openai-box").hidden = e !== "openai";
+    $("tr-local-box").hidden = e !== "local"; $("tr-openai-box").hidden = e !== "openai"; $("tr-skip-box").hidden = e !== "local";
   }
   function renderSummary() {
     if (!settings) return;
     const local = settings.engine === "local";
     const model = (local ? settings.options.local_models : settings.options.openai_models).find(m => m[0] === (local ? settings.local_model : settings.openai_model));
     $("tr-summary").innerHTML = `<span class="chip">Motor <b>${local ? "Gratuito" : "OpenAI"}</b></span>` +
-      `<span class="chip">Modelo <b>${esc(model ? model[1].split(" — ")[0] : "")}</b></span>`;
+      `<span class="chip">Modelo <b>${esc(model ? model[1].split(" — ")[0] : "")}</b></span>` +
+      (local ? `<span class="chip">Áudio <b>${settings.skip_silence ? "só trechos com fala" : "inteiro"}</b></span>` : "");
   }
   async function saveSettings(extra = {}) {
     const body = { engine: engineSel(), local_model: $("tr-local-model").value, openai_model: $("tr-openai-model").value,
-                   language: $("tr-default-lang").value, ...extra };
+                   language: $("tr-default-lang").value, skip_silence: $("tr-skip").checked, ...extra };
     const key = $("tr-key").value.trim(); if (key) body.openai_key = key;
     try {
       const res = await api("/api/transcribe/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

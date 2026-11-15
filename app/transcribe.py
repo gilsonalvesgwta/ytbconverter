@@ -36,7 +36,9 @@ OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com").rs
 OPENAI_CHUNK_SECONDS = int(os.environ.get("OPENAI_CHUNK_SECONDS", "300"))
 MODELS_DIR = os.path.join(DATA_DIR, "models")
 JOB_TTL = 24 * 3600
-UPLOAD_TTL = 6 * 3600
+UPLOAD_IDLE_SECONDS = int(os.environ.get("UPLOAD_IDLE_SECONDS", "3600"))   # envio abandonado
+CLEANUP_INTERVAL = int(os.environ.get("CLEANUP_INTERVAL", "300"))
+WORK_PREFIX = "ytbcw-"  # toda pasta temporária do sistema começa assim
 
 LOCAL_MODELS = [
     ("tiny", "Tiny — o mais rápido, qualidade básica"),
@@ -52,7 +54,7 @@ OPENAI_MODELS = [
 ]
 LANGUAGES = [("pt", "Português"), ("auto", "Detectar automaticamente"), ("en", "Inglês"), ("es", "Espanhol")]
 DEFAULT_SETTINGS = {"engine": "local", "local_model": "small", "openai_model": "gpt-4o-mini-transcribe",
-                    "openai_key": "", "language": "pt"}
+                    "openai_key": "", "language": "pt", "skip_silence": False}
 
 
 class TranscribeError(Exception):
@@ -96,6 +98,8 @@ def update_settings(data, can_store_key):
                 if data[field] not in allowed:
                     raise TranscribeError(f"Valor inválido para {field}.")
                 s[field] = data[field]
+        if "skip_silence" in data:
+            s["skip_silence"] = bool(data["skip_silence"])
         if data.get("clear_openai_key"):
             s["openai_key"] = ""
         key = str(data.get("openai_key") or "").strip()
@@ -124,8 +128,46 @@ _uploads_lock = threading.Lock()
 def _cleanup_uploads():
     now = time.time()
     with _uploads_lock:
-        for uid in [u for u, v in _uploads.items() if now - v["created"] > UPLOAD_TTL]:
+        for uid in [u for u, v in _uploads.items() if not v.get("in_use") and now - v["touched"] > UPLOAD_IDLE_SECONDS]:
+            log.info("apagando envio abandonado %s", uid[:8])
             _drop_upload(uid)
+
+
+def startup_cleanup():
+    """Ao iniciar, apaga sobras de execuções anteriores (envios e pastas de trabalho)."""
+    removed = 0
+    if os.path.isdir(UPLOAD_DIR):
+        for name in os.listdir(UPLOAD_DIR):
+            try:
+                os.unlink(os.path.join(UPLOAD_DIR, name))
+                removed += 1
+            except OSError:
+                pass
+    tmp = tempfile.gettempdir()
+    for name in os.listdir(tmp):
+        if name.startswith(WORK_PREFIX):
+            path = os.path.join(tmp, name)
+            shutil.rmtree(path, ignore_errors=True) if os.path.isdir(path) else _unlink(path)
+            removed += 1
+    if removed:
+        log.info("limpeza ao iniciar: %d sobras temporárias apagadas", removed)
+    threading.Thread(target=_janitor, name="limpeza", daemon=True).start()
+
+
+def _unlink(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _janitor():
+    while True:
+        time.sleep(CLEANUP_INTERVAL)
+        try:
+            _cleanup_uploads()
+        except Exception:  # noqa
+            log.exception("falha na limpeza automática")
 
 
 def _drop_upload(uid):
@@ -153,7 +195,7 @@ def upload_init(name, size):
     open(path, "wb").close()
     with _uploads_lock:
         _uploads[uid] = {"path": path, "size": size, "received": 0, "name": str(name or "arquivo")[:200],
-                         "created": time.time()}
+                         "created": time.time(), "touched": time.time()}
     return {"upload_id": uid, "chunk_size": 50 * 1024 * 1024}
 
 
@@ -183,6 +225,7 @@ def upload_chunk(uid, offset, stream, length):
             fh.write(buf)
             left -= len(buf)
     u["received"] = offset + length
+    u["touched"] = time.time()
     return {"received": u["received"], "complete": u["received"] == u["size"]}
 
 
@@ -225,6 +268,8 @@ def create_job(source, language=None):
            "name": name, "language": lang, "engine": settings["engine"],
            "model": settings["local_model"] if settings["engine"] == "local" else settings["openai_model"],
            "duration": 0, "created": now, "started": None, "finished": None, "_source": source}
+    if source.get("upload_id"):
+        u["in_use"] = True  # já está na fila: a limpeza automática não mexe
     with _jobs_lock:
         _jobs[jid] = job
     _queue.put(jid)
@@ -261,7 +306,7 @@ def _run(job):
     settings = load_settings()
     _set(job, status="running", stage="Preparando o áudio", started=time.time(),
          engine=settings["engine"], model=settings["local_model"] if settings["engine"] == "local" else settings["openai_model"])
-    workdir = tempfile.mkdtemp(prefix="ytbc-tr-")
+    workdir = tempfile.mkdtemp(prefix=WORK_PREFIX + "tr-")
     src = job["_source"]
     try:
         headers = {}
@@ -276,6 +321,10 @@ def _run(job):
             _set(job, name=title)
         wav = os.path.join(workdir, "audio.wav")
         _to_wav(input_path, headers, wav)
+        if src.get("upload_id"):
+            # o arquivo original não é mais necessário: libera o espaço já
+            with _uploads_lock:
+                _drop_upload(src["upload_id"])
         duration = _duration(wav)
         if duration < 0.3:
             raise TranscribeError("Não encontrei áudio nesse arquivo.")
@@ -372,7 +421,8 @@ def _local(job, wav, settings):
     with wave.open(wav, "rb") as fh:
         audio = np.frombuffer(fh.readframes(fh.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
     segments, _info = model.transcribe(audio, language=lang, beam_size=int(os.environ.get("WHISPER_BEAM", "1")),
-                                       vad_filter=True, condition_on_previous_text=False)
+                                       vad_filter=bool(settings.get("skip_silence")),
+                                       condition_on_previous_text=False)
     duration = job["duration"] or 1
     parts, last_end = [], None
     for seg in segments:

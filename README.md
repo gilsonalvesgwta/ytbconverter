@@ -16,6 +16,10 @@ Endereço: **https://ytbconversor.wtatech.com.br**
 
 Se você recarregar a página no meio, ela retoma a transcrição em andamento.
 
+O motor gratuito transcreve **o áudio inteiro**, inclusive músicas e falas com música de fundo. A opção "Pular trechos sem fala (modo rápido)" existe para palestras e reuniões com muitas pausas, mas pode pular canto. Deixe desmarcada para ter tudo.
+
+**Espaço na VPS:** o arquivo enviado fica só temporariamente. Ele é apagado assim que o áudio é extraído (antes mesmo de terminar a transcrição), e a pasta de trabalho é apagada ao terminar. Envios abandonados (navegador fechado no meio) são apagados sozinhos depois de 1 hora, e qualquer sobra é limpa quando o serviço reinicia. O texto da transcrição fica só na memória (24 h) e no seu navegador. O que fica guardado de forma permanente é apenas o modelo gratuito baixado (cerca de 500 MB para o Small), para não precisar baixar de novo a cada uso.
+
 **Motores (em "Configurações da transcrição", configurados uma única vez):**
 
 | Motor | Custo | Observação |
