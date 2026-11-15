@@ -203,8 +203,8 @@
           <span id="tr-go-label">Transcrever</span></button>
         <button class="ghost stop" id="tr-stop" type="button" hidden style="height:46px" title="Parar e manter o texto transcrito até agora">■ Parar</button>
       </div>
-      <div id="tr-cap-extra" hidden style="margin-top:10px">
-        <label class="check"><input type="checkbox" id="tr-ts" checked> Incluir marcações de tempo [mm:ss]</label>
+      <div style="margin-top:10px"><label class="check"><input type="checkbox" id="tr-ts" checked> Incluir marcações de tempo [mm:ss] (formato do YouTube)</label></div>
+      <div id="tr-cap-extra" hidden>
         <div class="hint">Ao colar o link, a transcrição que o próprio YouTube já tem (legenda do criador ou automática) aparece sozinha em segundos. Depois é só um clique para copiar ou baixar.</div>
       </div>
       <div class="summary" id="tr-summary"></div>
@@ -524,7 +524,9 @@
   const LS_JOB = "ytbc.lastJob";
   const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } },
                set(k,v){ try { localStorage.setItem(k,v); } catch {} }, del(k){ try { localStorage.removeItem(k); } catch {} } };
-  let file = null, settings = null, loaded = false, busy = false, lastName = "transcricao", current = null;
+  let file = null, settings = null, loaded = false, busy = false, lastName = "transcricao", current = null, shownJob = null;
+  // formato do YouTube ("[mm:ss] frase" por linha) ou texto corrido
+  const shownText = (job) => ($("tr-ts").checked && job.text_ts) ? job.text_ts : (job.text || "");
 
   function setStatus(kind, html, el = $("tr-status")) { el.className = "status " + (kind || ""); el.innerHTML = html || ""; }
   function bar(p) { $("tr-bar").hidden = p == null; if (p != null) $("tr-bar").firstElementChild.style.width = Math.max(2, Math.min(100, p)) + "%"; }
@@ -634,6 +636,7 @@
   $("tr-url").addEventListener("paste", () => setTimeout(() => autoFetch(true), 0));
   $("tr-cap-lang").addEventListener("change", () => autoFetch(true));
   $("tr-ts").addEventListener("change", () => autoFetch(true));
+  $("tr-ts").addEventListener("change", () => { if (shownJob) $("tr-text").value = shownText(shownJob); });  // arquivo: troca na hora
 
   // ---------- extração do áudio no navegador (MP4/MOV/M4A): só separa os bytes do áudio, sem converter
   const fourcc = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
@@ -823,8 +826,9 @@
     const p = job.duration ? job.transcribed / job.duration * 100 : (ctl.up || 0) * 50;
     bar(Math.max(p, 2));
     if (job.text && job.status !== "done") {
-      const t = $("tr-text"), atEnd = t.scrollTop + t.clientHeight >= t.scrollHeight - 30;
-      if (t.value !== job.text) { t.value = job.text; if (atEnd) t.scrollTop = t.scrollHeight; }
+      shownJob = job;
+      const t = $("tr-text"), atEnd = t.scrollTop + t.clientHeight >= t.scrollHeight - 30, val = shownText(job);
+      if (t.value !== val) { t.value = val; if (atEnd) t.scrollTop = t.scrollHeight; }
       $("tr-result").classList.add("show"); $("tr-copy").disabled = true;
       $("tr-meta").textContent = "Transcrevendo… texto parcial (o botão de copiar libera no fim)";
     }
@@ -844,6 +848,7 @@
       }
       throw new Error(d.error);
     }
+    shownJob = null;
     lastName = (d.title || "transcricao").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 120) || "transcricao";
     const text = d.text || "";
     $("tr-text").value = text;
@@ -940,8 +945,9 @@
 
   function showResult(job) {
     bar(null);
+    shownJob = job;
     const text = job.text || "";
-    $("tr-text").value = text;
+    $("tr-text").value = shownText(job);
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     const took = job.finished && job.started ? Math.round(job.finished - job.started) : 0;
     if (job.status === "cancelled") {

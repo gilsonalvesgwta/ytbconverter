@@ -153,6 +153,8 @@ class TestOpenAIEngine(base.Base):
         job = wait_job(self.base, json.loads(body)["job"]["id"])
         self.assertEqual(job["status"], "done", job)
         self.assertEqual(job["text"], "[60s] [60s] [30s]")  # em ordem, mesmo com partes em paralelo
+        # formato do YouTube: uma linha por trecho com o horário de início
+        self.assertRegex(job["text_ts"], r"^\[00:00\] \[60s\]\n\[0[01]:\d\d\] \[60s\]\n\[0[12]:\d\d\] \[30s\]$")
         self.assertAlmostEqual(job["duration"], 150, delta=0.5)
         self.assertEqual(job["name"], "reuniao gravada.mp4")
 
@@ -562,6 +564,36 @@ class TestNoStorageLeft(base.Base):
         self.assertEqual(base.request(self.base, f"/api/upload/{uid}?offset=1000", raw=b"x", method="PUT", headers=AUTH)[0], 404)
 
 
+class TestYouTubeFormat(unittest.TestCase):
+    """Linhas curtas "[mm:ss] frase", como na transcrição do YouTube."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(base.ROOT, "app"))
+        import transcribe
+        self.t = transcribe
+
+    def test_words_to_lines(self):
+        ws = [(20.1, 20.4, " The"), (20.4, 20.9, " silence"), (20.9, 21.3, " learned"), (21.3, 21.5, " the"),
+              (21.5, 21.9, " shape"), (21.9, 22.0, " of"), (22.0, 22.3, " your"), (24.0, 24.4, " name."),
+              (24.5, 24.8, " It"), (24.8, 25.3, " echoes"), (28.2, 28.9, " empty"), (28.9, 29.5, " halls."),
+              (3725.2, 3726, " late")]
+        self.assertEqual(self.t.lines_to_text(self.t.words_to_lines(ws)),
+                         "[00:20] The silence learned the shape of your\n[00:24] name.\n[00:24] It echoes\n"
+                         "[00:28] empty halls.\n[1:02:05] late")
+
+    def test_long_line_is_split(self):
+        ws = [(i * 0.3, i * 0.3 + 0.25, f" palavra{i}") for i in range(20)]
+        lines = self.t.words_to_lines(ws)
+        self.assertTrue(all(len(x.split()) <= 7 and len(x) <= 42 for _, x in lines), lines)
+        self.assertEqual(" ".join(x for _, x in lines), " ".join(w.strip() for *_, w in ws))
+
+    def test_text_to_lines_estimates_time(self):
+        out = self.t.lines_to_text(self.t.text_to_lines(
+            "Bom dia a todos. Hoje vamos falar sobre planejamento financeiro e consórcio.", 60, 10))
+        self.assertTrue(out.startswith("[01:00] Bom dia a todos.\n[01:0"), out)
+        self.assertEqual(self.t.text_to_lines("", 0, 10), [])
+
+
 class TestKeyNeedsPassword(base.Base):
     env = {}
 
@@ -604,6 +636,12 @@ class TestLocalEngine(base.Base):
             base.request(self.base, f"/api/upload/{d['upload_id']}?offset={off}", raw=data[off:off + 20000], method="PUT", headers=AUTH)
         job = wait_job(self.base, d["job"]["id"], timeout=900)
         print("\nTRANSCRICAO_LOCAL:", job.get("text") or job.get("error"))
+        print("TRANSCRICAO_LOCAL_TS:", (job.get("text_ts") or "").replace("\n", " | "))
+        ts_lines = job["text_ts"].split("\n")
+        self.assertGreaterEqual(len(ts_lines), 3, job["text_ts"])
+        for line in ts_lines:
+            self.assertRegex(line, r"^\[\d\d:\d\d\] \S")
+            self.assertLessEqual(len(line.split()) - 1, 7, line)
         self.assertEqual(job["status"], "done", job)
         text = job["text"].lower()
         hits = [w for w in ["bom dia", "todos", "consórcio", "planejamento", "financeiro", "casa"] if w in text]

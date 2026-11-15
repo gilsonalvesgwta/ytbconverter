@@ -311,7 +311,7 @@ def create_job(source, language=None, duration=None):
     job = {"id": jid, "status": "queued", "stage": "Na fila", "progress": 0, "text": "", "error": "",
            "name": name, "language": lang, "engine": settings["engine"],
            "model": settings["local_model"] if settings["engine"] == "local" else settings["openai_model"],
-           "duration": duration, "transcribed": 0, "received_audio": 0,
+           "duration": duration, "transcribed": 0, "received_audio": 0, "text_ts": "",
            "created": now, "started": None, "finished": None, "_source": source}
     if u is not None:
         u["in_use"] = True  # já está na fila: a limpeza automática não mexe
@@ -737,6 +737,52 @@ def preload_model_async():
     threading.Thread(target=run, name="pre-carga", daemon=True).start()
 
 
+# ---------------------------------------------------------------- formato do YouTube: "[mm:ss] frase curta"
+def fmt_ts(sec):
+    sec = int(max(0, sec))
+    h, m, s_ = sec // 3600, sec % 3600 // 60, sec % 60
+    return f"{h}:{m:02d}:{s_:02d}" if h else f"{m:02d}:{s_:02d}"
+
+
+def words_to_lines(words, max_words=7, max_chars=42, pause=0.7):
+    """Agrupa palavras (início, fim, texto) em linhas curtas como as legendas do YouTube:
+    quebra em pausa, fim de frase ou quando a linha fica longa."""
+    lines, cur, start, last_end = [], [], None, None
+    for a, b, w in words:
+        w = w.strip()
+        if not w:
+            continue
+        if cur and (a - last_end > pause or len(cur) >= max_words
+                    or len(" ".join(cur)) + 1 + len(w) > max_chars or re.search(r"[.!?…]$", cur[-1])):
+            lines.append((start, " ".join(cur)))
+            cur = []
+        if not cur:
+            start = a
+        cur.append(w)
+        last_end = b
+    if cur:
+        lines.append((start, " ".join(cur)))
+    return lines
+
+
+def text_to_lines(text, t0, dur):
+    """Sem tempo por palavra (OpenAI): linhas curtas com horário estimado pela posição no trecho."""
+    words = text.split()
+    if not words:
+        return []
+    total = sum(len(w) + 1 for w in words)
+    pos, timed = 0, []
+    for w in words:
+        a = t0 + dur * pos / total
+        pos += len(w) + 1
+        timed.append((a, t0 + dur * pos / total, w))
+    return words_to_lines(timed, pause=10 ** 9)
+
+
+def lines_to_text(lines):
+    return "\n".join(f"[{fmt_ts(t)}] {x}" for t, x in lines)
+
+
 WHISPER_BATCH = max(1, int(os.environ.get("WHISPER_BATCH", "8")))
 _batched_cache = {"model": None, "pipe": None, "broken": False}
 
@@ -785,11 +831,11 @@ def _local(job, pcm, settings):
     skip = bool(settings.get("skip_silence"))
     lang = None if job["language"] == "auto" else job["language"]
     beam = int(os.environ.get("WHISPER_BEAM", "1"))
-    text, last_end, last_text = "", None, None
+    text, last_end, last_text, lines = "", None, None, []
     _set(job, stage="Transcrevendo")
     for start, block in pcm.blocks(FIRST_BLOCK_SECONDS, LOCAL_BLOCK_SECONDS):
         audio = block.astype(np.float32) / 32768.0
-        common = dict(language=lang, beam_size=beam,
+        common = dict(language=lang, beam_size=beam, word_timestamps=True,
                       # sem isto o Whisper descarta trechos que "parecem" não ter fala
                       # (canto, fala com música de fundo) e a transcrição sai cortada
                       no_speech_threshold=0.6 if skip else None, condition_on_previous_text=False)
@@ -825,7 +871,9 @@ def _local(job, pcm, settings):
                     text += "\n\n" if last_end is not None and s0 - last_end > 2.0 else " "
                 text += t
                 last_end = start + seg.end
-                _set(job, text=text)
+                ws = [(start + w.start, start + w.end, w.word) for w in (getattr(seg, "words", None) or [])]
+                lines += words_to_lines(ws) if ws else [(s0, t)]
+                _set(job, text=text, text_ts=lines_to_text(lines))
             _progress(job, start + seg.end)
         _progress(job, start + len(block) / SR)
     return text
@@ -836,27 +884,29 @@ def _openai(job, pcm, settings):
     key = settings["openai_key"]
     if not key:
         raise TranscribeError("Configure a chave da OpenAI em Configurações da transcrição.")
-    results, done_secs, lock = {}, [0.0], threading.Lock()
+    results, results_ts, done_secs, lock = {}, {}, [0.0], threading.Lock()
 
-    def work(idx, block):
+    def work(idx, start, block):
         text = _openai_request(key, settings["openai_model"], _encode_mp3(block), job["language"], "").strip()
         with lock:
             results[idx] = text
+            results_ts[idx] = text_to_lines(text, start, len(block) / SR)
             done_secs[0] += len(block) / SR
-            ordered, i = [], 0
+            ordered, ordered_ts, i = [], [], 0
             while i in results:  # texto parcial sempre na ordem certa
                 if results[i]:
                     ordered.append(results[i])
+                ordered_ts += results_ts[i]
                 i += 1
-            _set(job, text=" ".join(ordered))
+            _set(job, text=" ".join(ordered), text_ts=lines_to_text(ordered_ts))
             _progress(job, done_secs[0])
 
     _set(job, stage="Transcrevendo")
     futures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=OPENAI_PARALLEL) as pool:
         try:
-            for idx, (_start, block) in enumerate(pcm.blocks(OPENAI_CHUNK_SECONDS, OPENAI_CHUNK_SECONDS)):
-                futures.append(pool.submit(work, idx, block))
+            for idx, (start, block) in enumerate(pcm.blocks(OPENAI_CHUNK_SECONDS, OPENAI_CHUNK_SECONDS)):
+                futures.append(pool.submit(work, idx, start, block))
                 if any(f.done() and f.exception() for f in futures):
                     break
         except Cancelled:
