@@ -55,10 +55,10 @@ WORK_PREFIX = "ytbcw-"  # todo arquivo temporário do sistema começa assim
 SR = 16000
 
 LOCAL_MODELS = [
-    ("tiny", "Tiny — o mais rápido, qualidade básica"),
-    ("base", "Base — rápido, qualidade razoável"),
-    ("small", "Small — equilíbrio (recomendado)"),
-    ("medium", "Medium — melhor qualidade, mais lento"),
+    ("tiny", "Tiny — o mais rápido de todos, qualidade básica"),
+    ("base", "Base — cerca de 3x mais rápido que o Small, qualidade um pouco menor"),
+    ("small", "Small — melhor equilíbrio entre qualidade e velocidade (padrão)"),
+    ("medium", "Medium — melhor qualidade, cerca de 3x mais lento que o Small"),
     ("large-v3-turbo", "Large v3 Turbo — máxima qualidade, bem mais lento"),
 ]
 OPENAI_MODELS = [
@@ -102,6 +102,7 @@ def public_settings():
     s["openai_key_set"] = bool(key)
     s["openai_key_hint"] = (key[:3] + "…" + key[-4:]) if len(key) > 10 else ""
     s["model_ready"] = _model_cache["name"] == s["local_model"]
+    s["cpu_threads"] = _threads()
     s["options"] = {"engines": [["local", "Gratuito — no próprio servidor"], ["openai", "OpenAI — pago, usa sua chave"]],
                     "local_models": LOCAL_MODELS, "openai_models": OPENAI_MODELS, "languages": LANGUAGES}
     return s

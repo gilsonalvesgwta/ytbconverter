@@ -235,7 +235,7 @@
         </div>
         <div class="grid">
           <div class="full" id="tr-local-box"><label for="tr-local-model">Modelo gratuito</label><select id="tr-local-model"></select>
-            <div class="hint">Na primeira vez com cada modelo, o servidor baixa o modelo (alguns minutos). Depois fica salvo.</div></div>
+            <div class="hint">A velocidade depende do modelo e de quantos processadores a VPS tem. Na primeira vez com cada modelo, o servidor baixa o modelo (alguns minutos). Depois fica salvo. Para o mais rápido de todos, use a OpenAI.</div></div>
           <div class="full" id="tr-openai-box">
             <label for="tr-key">Chave da API da OpenAI</label>
             <input id="tr-key" type="password" placeholder="sk-..." autocomplete="off">
@@ -577,7 +577,8 @@
     const model = (local ? settings.options.local_models : settings.options.openai_models).find(m => m[0] === (local ? settings.local_model : settings.openai_model));
     $("tr-summary").innerHTML = `<span class="chip">Motor <b>${local ? "Gratuito" : "OpenAI"}</b></span>` +
       `<span class="chip">Modelo <b>${esc(model ? model[1].split(" — ")[0] : "")}</b></span>` +
-      (local ? `<span class="chip">Áudio <b>${settings.skip_silence ? "só trechos com fala" : "inteiro"}</b></span>` : "");
+      (local ? `<span class="chip">Áudio <b>${settings.skip_silence ? "só trechos com fala" : "inteiro"}</b></span>` +
+               `<span class="chip">Processadores <b>${settings.cpu_threads || "?"}</b></span>` : "");
   }
   async function saveSettings(extra = {}) {
     const body = { engine: engineSel(), local_model: $("tr-local-model").value, openai_model: $("tr-openai-model").value,

@@ -26,7 +26,7 @@ Se você recarregar a página no meio, ela retoma a transcrição em andamento. 
 - O modelo gratuito fica carregado na memória do servidor, pronto para começar na hora.
 - Na OpenAI, até 4 partes de 5 minutos são transcritas ao mesmo tempo.
 - Link do YouTube: o áudio é baixado em pedaços de 10 MB, 4 ao mesmo tempo. Numa conexão contínua, o YouTube entrega em "tempo real" (1 hora de vídeo levaria 1 hora); em pedaços, chega em segundos.
-- O que mais acelera o modo gratuito é dar mais processadores ao serviço (variável `LIMITE_CPU`) ou usar um modelo menor.
+- O modo gratuito processa vários trechos de 30 s de uma vez (em lote) e usa todos os processadores da VPS com prioridade baixa: aproveita o que estiver livre e cede na hora para os outros sistemas. O que mais muda a velocidade é o modelo (Base é cerca de 3x mais rápido que o Small) e o número de processadores da VPS. O mais rápido de todos é a OpenAI.
 
 O motor gratuito transcreve **o áudio inteiro**, inclusive músicas e falas com música de fundo. A opção "Pular trechos sem fala (modo rápido)" existe para palestras e reuniões com muitas pausas, mas pode pular canto. Deixe desmarcada para ter tudo.
 
@@ -72,8 +72,7 @@ O DNS `ytbconversor.wtatech.com.br` já aponta para a VPS. No Cloudflare, use a 
    |---|---|
    | `TRECHO_MAXIMO_SEGUNDOS` | `3600` (trecho de até 1 hora) |
    | `DOWNLOADS_SIMULTANEOS` | `3` |
-   | `LIMITE_CPU` | `2` (processadores para o serviço; mais = transcrição gratuita mais rápida) |
-   | `LIMITE_MEMORIA` | `3072M` |
+   | `LIMITE_MEMORIA` | `4096M` |
    | `UPLOAD_MAXIMO_MB` | `4096` (arquivo de até 4 GB para transcrever) |
    | `REDE_TRAEFIK` | `Wtatechor3Net` |
    | `RESOLVEDOR_TLS` | `letsencryptresolver` |
