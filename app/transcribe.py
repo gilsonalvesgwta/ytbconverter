@@ -1,15 +1,22 @@
 """
-Transcrição de vídeo/áudio do YTB Conversor.
+Transcrição de vídeo/áudio do YTB Conversor — em fluxo contínuo.
+
+Fluxo (o mais rápido possível):
+  1. O navegador extrai só o áudio do vídeo (MP4/MOV/M4A) e envia em partes;
+     outros formatos sobem como estão.
+  2. Assim que as primeiras partes chegam, o ffmpeg já decodifica o áudio
+     para a memória (PCM 16 kHz mono) — nenhum WAV é gravado em disco.
+  3. A transcrição acontece em blocos enquanto o resto ainda está chegando;
+     o texto parcial aparece na tela.
 
 Motores:
-  - "local": faster-whisper rodando na própria VPS (gratuito, sem chave).
-  - "openai": API da OpenAI (pago; padrão gpt-4o-mini-transcribe, o mais barato).
-
-Arquivos grandes chegam em partes (o proxy do Cloudflare limita cada envio
-a 100 MB) e cada transcrição vira uma tarefa numa fila, consultada pela
-interface (assim nenhuma requisição demora mais que alguns segundos).
+  - "local": faster-whisper na própria VPS (gratuito). O modelo fica
+    carregado na memória para começar na hora.
+  - "openai": API da OpenAI (pago; padrão gpt-4o-mini-transcribe, o mais
+    barato), com até OPENAI_PARALLEL blocos ao mesmo tempo.
 """
 
+import concurrent.futures
 import json
 import logging
 import os
@@ -34,11 +41,17 @@ UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "4096"))
 CHUNK_MAX_BYTES = 64 * 1024 * 1024
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com").rstrip("/")
 OPENAI_CHUNK_SECONDS = int(os.environ.get("OPENAI_CHUNK_SECONDS", "300"))
+OPENAI_PARALLEL = max(1, int(os.environ.get("OPENAI_PARALLEL", "4")))
+LOCAL_BLOCK_SECONDS = int(os.environ.get("LOCAL_BLOCK_SECONDS", "120"))
+FIRST_BLOCK_SECONDS = int(os.environ.get("FIRST_BLOCK_SECONDS", "30"))
+STREAM_IDLE_SECONDS = int(os.environ.get("STREAM_IDLE_SECONDS", "600"))  # envio parado no meio
+PRELOAD_MODEL = os.environ.get("PRELOAD_MODEL", "true") == "true"
 MODELS_DIR = os.path.join(DATA_DIR, "models")
 JOB_TTL = 24 * 3600
 UPLOAD_IDLE_SECONDS = int(os.environ.get("UPLOAD_IDLE_SECONDS", "3600"))   # envio abandonado
 CLEANUP_INTERVAL = int(os.environ.get("CLEANUP_INTERVAL", "300"))
-WORK_PREFIX = "ytbcw-"  # toda pasta temporária do sistema começa assim
+WORK_PREFIX = "ytbcw-"  # todo arquivo temporário do sistema começa assim
+SR = 16000
 
 LOCAL_MODELS = [
     ("tiny", "Tiny — o mais rápido, qualidade básica"),
@@ -55,6 +68,10 @@ OPENAI_MODELS = [
 LANGUAGES = [("pt", "Português"), ("auto", "Detectar automaticamente"), ("en", "Inglês"), ("es", "Espanhol")]
 DEFAULT_SETTINGS = {"engine": "local", "local_model": "small", "openai_model": "gpt-4o-mini-transcribe",
                     "openai_key": "", "language": "pt", "skip_silence": False}
+# formatos que o ffmpeg só lê com o arquivo completo (índice pode estar no fim)
+NEEDS_WHOLE_FILE = (".mp4", ".m4a", ".m4v", ".mov", ".3gp", ".3g2")
+STREAM_FORMATS = {"adts": ["-f", "aac"], "mp3": ["-f", "mp3"], "file": []}
+MUSIC_ONLY = re.compile(r"[\s♪♫♬♩🎵🎶*.\-]*|\[(música|music|musique|aplausos|applause)\]|\((música|music)\)", re.I)
 
 
 class TranscribeError(Exception):
@@ -83,6 +100,7 @@ def public_settings():
     key = s.pop("openai_key")
     s["openai_key_set"] = bool(key)
     s["openai_key_hint"] = (key[:3] + "…" + key[-4:]) if len(key) > 10 else ""
+    s["model_ready"] = _model_cache["name"] == s["local_model"]
     s["options"] = {"engines": [["local", "Gratuito — no próprio servidor"], ["openai", "OpenAI — pago, usa sua chave"]],
                     "local_models": LOCAL_MODELS, "openai_models": OPENAI_MODELS, "languages": LANGUAGES}
     return s
@@ -117,12 +135,26 @@ def update_settings(data, can_store_key):
             json.dump(s, fh, ensure_ascii=False, indent=2)
         os.chmod(tmp, 0o600)
         os.replace(tmp, SETTINGS_FILE)
+    preload_model_async()
     return public_settings()
 
 
 # ---------------------------------------------------------------- envio em partes
 _uploads = {}
 _uploads_lock = threading.Lock()
+
+
+def _unlink(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _drop_upload(uid):
+    u = _uploads.pop(uid, None)
+    if u:
+        _unlink(u["path"])
 
 
 def _cleanup_uploads():
@@ -134,15 +166,12 @@ def _cleanup_uploads():
 
 
 def startup_cleanup():
-    """Ao iniciar, apaga sobras de execuções anteriores (envios e pastas de trabalho)."""
+    """Ao iniciar, apaga sobras de execuções anteriores e pré-carrega o modelo."""
     removed = 0
     if os.path.isdir(UPLOAD_DIR):
         for name in os.listdir(UPLOAD_DIR):
-            try:
-                os.unlink(os.path.join(UPLOAD_DIR, name))
-                removed += 1
-            except OSError:
-                pass
+            _unlink(os.path.join(UPLOAD_DIR, name))
+            removed += 1
     tmp = tempfile.gettempdir()
     for name in os.listdir(tmp):
         if name.startswith(WORK_PREFIX):
@@ -152,13 +181,7 @@ def startup_cleanup():
     if removed:
         log.info("limpeza ao iniciar: %d sobras temporárias apagadas", removed)
     threading.Thread(target=_janitor, name="limpeza", daemon=True).start()
-
-
-def _unlink(path):
-    try:
-        os.unlink(path)
-    except OSError:
-        pass
+    preload_model_async()
 
 
 def _janitor():
@@ -168,15 +191,6 @@ def _janitor():
             _cleanup_uploads()
         except Exception:  # noqa
             log.exception("falha na limpeza automática")
-
-
-def _drop_upload(uid):
-    u = _uploads.pop(uid, None)
-    if u:
-        try:
-            os.unlink(u["path"])
-        except OSError:
-            pass
 
 
 def upload_init(name, size):
@@ -214,8 +228,18 @@ def upload_chunk(uid, offset, stream, length):
         raise TranscribeError("Parte fora de ordem. Recomece o envio.", 409)
     if offset + length > u["size"]:
         raise TranscribeError("O arquivo enviado é maior que o informado.")
+    if offset < u["received"] and u.get("streaming"):
+        # a transcrição já está lendo: repetição de parte já recebida (nova tentativa) é ignorada,
+        # só gravamos o que ainda não tinha chegado
+        skip = u["received"] - offset
+        if skip >= length:
+            stream.read(length)
+            return {"received": u["received"], "complete": u["received"] == u["size"]}
+        stream.read(skip)
+        offset, length = u["received"], length - skip
     with open(u["path"], "r+b") as fh:
-        fh.truncate(offset)  # reenvio da mesma parte (nova tentativa) sobrescreve
+        if not u.get("streaming"):
+            fh.truncate(offset)  # reenvio da mesma parte (nova tentativa) sobrescreve
         fh.seek(offset)
         left = length
         while left > 0:
@@ -242,8 +266,22 @@ def _start_worker():
         threading.Thread(target=_worker, name="transcricao", daemon=True).start()
 
 
-def create_job(source, language=None):
-    """source: {"upload_id": ...} ou {"url": ..., "resolver": callable -> (stream_url, headers, title)}"""
+def start_stream(name, size, language=None, fmt="file", duration=None):
+    """Cria envio + transcrição de uma vez: a transcrição começa enquanto o envio acontece."""
+    if fmt not in STREAM_FORMATS:
+        raise TranscribeError("Formato de envio inválido.")
+    up = upload_init(name, size)
+    try:
+        job = create_job({"upload_id": up["upload_id"], "stream": True, "fmt": fmt}, language, duration)
+    except Exception:
+        with _uploads_lock:
+            _drop_upload(up["upload_id"])
+        raise
+    return {**up, "job": job}
+
+
+def create_job(source, language=None, duration=None):
+    """source: {"upload_id", ["stream", "fmt"]} ou {"url", "resolver": callable -> (url, headers, title, duração)}"""
     now = time.time()
     with _jobs_lock:
         for jid in [j for j, v in _jobs.items() if now - v["created"] > JOB_TTL]:
@@ -252,24 +290,30 @@ def create_job(source, language=None):
     lang = language or settings["language"]
     if lang not in [l for l, _ in LANGUAGES]:
         raise TranscribeError("Idioma inválido.")
-    name = "link do YouTube"
+    name, u = "link do YouTube", None
     if source.get("upload_id"):
         with _uploads_lock:
             u = _uploads.get(source["upload_id"])
         if not u:
             raise TranscribeError("Envio não encontrado (expirou?). Selecione o arquivo de novo.", 404)
-        if u["received"] != u["size"]:
+        if not source.get("stream") and u["received"] != u["size"]:
             raise TranscribeError("O arquivo ainda não terminou de ser enviado.")
         name = u["name"]
     if settings["engine"] == "openai" and not settings["openai_key"]:
         raise TranscribeError("Configure a chave da OpenAI ou escolha o modo gratuito.")
+    try:
+        duration = max(0.0, float(duration or 0))
+    except (TypeError, ValueError):
+        duration = 0.0
     jid = uuid.uuid4().hex
     job = {"id": jid, "status": "queued", "stage": "Na fila", "progress": 0, "text": "", "error": "",
            "name": name, "language": lang, "engine": settings["engine"],
            "model": settings["local_model"] if settings["engine"] == "local" else settings["openai_model"],
-           "duration": 0, "created": now, "started": None, "finished": None, "_source": source}
-    if source.get("upload_id"):
+           "duration": duration, "transcribed": 0, "received_audio": 0,
+           "created": now, "started": None, "finished": None, "_source": source}
+    if u is not None:
         u["in_use"] = True  # já está na fila: a limpeza automática não mexe
+        u["streaming"] = bool(source.get("stream"))
     with _jobs_lock:
         _jobs[jid] = job
     _queue.put(jid)
@@ -302,42 +346,200 @@ def _worker():
             _run(job)
 
 
-def _run(job):
-    settings = load_settings()
-    _set(job, status="running", stage="Preparando o áudio", started=time.time(),
-         engine=settings["engine"], model=settings["local_model"] if settings["engine"] == "local" else settings["openai_model"])
-    workdir = tempfile.mkdtemp(prefix=WORK_PREFIX + "tr-")
-    src = job["_source"]
-    try:
-        headers = {}
-        if src.get("upload_id"):
+# ---------------------------------------------------------------- áudio em fluxo
+class PcmStream:
+    """Decodifica a origem com ffmpeg direto para a memória, enquanto ela chega."""
+
+    def __init__(self, job, src):
+        self.job, self.src = job, src
+        self.buf = bytearray()
+        self.base = 0          # amostra absoluta de buf[0]
+        self.eof = False
+        self.lock = threading.Lock()
+        self.err = b""
+        self.fail = None
+        self.upload_id = src.get("upload_id")
+        self.proc = None
+
+    def start(self):
+        src, cmd = self.src, ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin"]
+        feed = None
+        if self.upload_id:
             with _uploads_lock:
-                u = _uploads.get(src["upload_id"])
+                u = _uploads.get(self.upload_id)
             if not u:
                 raise TranscribeError("O arquivo enviado expirou. Envie de novo.")
-            input_path = u["path"]
+            fmt = src.get("fmt", "file")
+            whole = not src.get("stream") or (fmt == "file" and u["name"].lower().endswith(NEEDS_WHOLE_FILE))
+            if whole:
+                _set(self.job, stage="Recebendo o arquivo")
+                self._wait_complete(u)
+                cmd += ["-i", u["path"]]
+            else:
+                cmd += STREAM_FORMATS[fmt] + ["-i", "pipe:0"]
+                feed = u
         else:
-            input_path, headers, title = src["resolver"]()
-            _set(job, name=title)
-        wav = os.path.join(workdir, "audio.wav")
-        _to_wav(input_path, headers, wav)
-        if src.get("upload_id"):
-            # o arquivo original não é mais necessário: libera o espaço já
+            url, headers, title, duration = src["resolver"]()
+            _set(self.job, name=title)
+            if duration and not self.job["duration"]:
+                _set(self.job, duration=float(duration))
+            if url.startswith("http"):
+                hdrs = "".join(f"{k}: {v}\r\n" for k, v in (headers or {}).items())
+                if hdrs:
+                    cmd += ["-headers", hdrs]
+                cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
+            cmd += ["-i", url]
+        cmd += ["-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(SR), "-f", "s16le", "pipe:1"]
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE if feed else subprocess.DEVNULL,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        threading.Thread(target=self._read_out, daemon=True).start()
+        threading.Thread(target=self._read_err, daemon=True).start()
+        if feed:
+            threading.Thread(target=self._feed, args=(feed,), daemon=True).start()
+        elif self.upload_id:
+            threading.Thread(target=self._drop_when_done, daemon=True).start()
+
+    def _wait_complete(self, u):
+        last, t = -1, time.time()
+        while u["received"] < u["size"]:
+            if u["received"] != last:
+                last, t = u["received"], time.time()
+            elif time.time() - t > STREAM_IDLE_SECONDS:
+                raise TranscribeError("O envio do arquivo parou no meio. Tente de novo.")
+            time.sleep(0.2)
+
+    def _feed(self, u):
+        """Entrega ao ffmpeg os bytes que já chegaram, conforme chegam."""
+        pos, t = 0, time.time()
+        try:
+            with open(u["path"], "rb") as fh:
+                while True:
+                    avail = u["received"]
+                    if avail > pos:
+                        fh.seek(pos)
+                        while pos < avail:
+                            data = fh.read(min(1024 * 1024, avail - pos))
+                            if not data:
+                                break
+                            self.proc.stdin.write(data)
+                            pos += len(data)
+                        t = time.time()
+                    elif pos >= u["size"]:
+                        break
+                    elif time.time() - t > STREAM_IDLE_SECONDS:
+                        self.fail = "O envio do arquivo parou no meio. Tente de novo."
+                        self.proc.kill()
+                        return
+                    else:
+                        time.sleep(0.1)
+        except (BrokenPipeError, ValueError, OSError):
+            pass
+        finally:
+            try:
+                self.proc.stdin.close()
+            except OSError:
+                pass
             with _uploads_lock:
-                _drop_upload(src["upload_id"])
-        duration = _duration(wav)
-        if duration < 0.3:
-            raise TranscribeError("Não encontrei áudio nesse arquivo.")
-        _set(job, duration=duration)
-        if settings["engine"] == "openai":
-            text = _openai(job, wav, workdir, settings)
-        else:
-            text = _local(job, wav, settings)
-        text = text.strip()
-        if not text:
-            text = "(Nenhuma fala encontrada no áudio.)"
-        _set(job, status="done", stage="Concluído", progress=100, text=text, finished=time.time())
-        log.info("transcrição ok %s %.0fs de áudio em %.0fs (%s/%s)", job["id"][:8], duration,
+                _drop_upload(self.upload_id)  # já foi todo lido: libera o espaço na hora
+
+    def _drop_when_done(self):
+        self.proc.wait()
+        with _uploads_lock:
+            _drop_upload(self.upload_id)
+
+    def _read_out(self):
+        out = self.proc.stdout
+        while True:
+            data = out.read(64 * 1024)
+            if not data:
+                break
+            with self.lock:
+                self.buf += data
+            _set(self.job, received_audio=round(self.available() / SR, 1))
+        self.proc.wait()
+        with self.lock:
+            self.eof = True
+
+    def _read_err(self):
+        for line in self.proc.stderr:
+            self.err = (self.err + line)[-3000:]
+
+    def available(self):
+        with self.lock:
+            return self.base + len(self.buf) // 2
+
+    def _slice(self, start, end, consume):
+        import numpy as np
+        with self.lock:
+            a, b = (start - self.base) * 2, (end - self.base) * 2
+            block = np.frombuffer(bytes(self.buf[a:b]), dtype=np.int16)
+            if consume:
+                del self.buf[:b]
+                self.base = end
+        return block
+
+    def error_message(self):
+        if self.fail:
+            return self.fail
+        err = self.err.decode("utf-8", "replace").lower()
+        if "matches no streams" in err or "does not contain any stream" in err or "output file is empty" in err:
+            return "Esse arquivo não tem faixa de áudio."
+        if ("invalid data" in err or "could not find codec" in err or "moov atom not found" in err
+                or "failed to read frame size" in err or "error opening input" in err or "invalid argument" in err):
+            return "Não consegui ler esse arquivo: formato não reconhecido ou arquivo corrompido."
+        return "Não consegui extrair o áudio: " + (err.strip()[-300:] or "arquivo sem áudio reconhecível.")
+
+    def blocks(self, first, size):
+        """Gera (início_em_segundos, amostras) à medida que o áudio chega.
+        Cada corte cai no ponto mais silencioso dos últimos 15 s do bloco."""
+        consumed, target, margin = 0, first, 15
+        while True:
+            avail = self.available()
+            with self.lock:
+                eof = self.eof
+            if avail - consumed >= (target + margin) * SR:
+                end = self._cut(consumed + target * SR, margin)
+            elif eof and avail > consumed:
+                end = avail
+            elif eof:
+                return
+            else:
+                time.sleep(0.15)
+                continue
+            yield consumed / SR, self._slice(consumed, end, True)
+            consumed, target = end, size
+
+    def _cut(self, ideal, margin):
+        import numpy as np
+        win = self._slice(ideal - margin * SR, ideal, False).astype(np.float32)
+        frame = SR // 10
+        n = len(win) // frame
+        if n == 0:
+            return ideal
+        rms = np.sqrt((win[: n * frame].reshape(n, frame) ** 2).mean(axis=1))
+        best = n - 1 - int(np.argmin(rms[::-1]))  # mais silencioso; empate → mais perto do ideal
+        return ideal - margin * SR + best * frame + frame // 2
+
+
+def _run(job):
+    settings = load_settings()
+    engine = settings["engine"]
+    _set(job, status="running", stage="Preparando o áudio", started=time.time(), engine=engine,
+         model=settings["local_model"] if engine == "local" else settings["openai_model"])
+    src = job["_source"]
+    pcm = PcmStream(job, src)
+    try:
+        pcm.start()
+        text = _openai(job, pcm, settings) if engine == "openai" else _local(job, pcm, settings)
+        if pcm.fail:
+            raise TranscribeError(pcm.fail)
+        total = pcm.available() / SR
+        if total < 0.3:
+            raise TranscribeError(pcm.error_message())
+        text = text.strip() or "(Nenhuma fala encontrada no áudio.)"
+        _set(job, status="done", stage="Concluído", progress=100, text=text, duration=total, transcribed=total,
+             finished=time.time())
+        log.info("transcrição ok %s %.0fs de áudio em %.0fs (%s/%s)", job["id"][:8], total,
                  job["finished"] - job["started"], job["engine"], job["model"])
     except TranscribeError as exc:
         _set(job, status="error", stage="Erro", error=str(exc), finished=time.time())
@@ -346,38 +548,17 @@ def _run(job):
         _set(job, status="error", stage="Erro", error="Erro inesperado na transcrição: " + str(exc)[:300],
              finished=time.time())
     finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+        if pcm.proc and pcm.proc.poll() is None:
+            pcm.proc.kill()
         if src.get("upload_id"):
             with _uploads_lock:
                 _drop_upload(src["upload_id"])
 
 
-# ---------------------------------------------------------------- áudio
-def _to_wav(src, headers, out):
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y"]
-    if src.startswith("http"):
-        hdrs = "".join(f"{k}: {v}\r\n" for k, v in (headers or {}).items())
-        if hdrs:
-            cmd += ["-headers", hdrs]
-        cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
-    cmd += ["-i", src, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", out]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-    if proc.returncode != 0:
-        err = proc.stderr.lower()
-        if "matches no streams" in err or "does not contain any stream" in err:
-            raise TranscribeError("Esse arquivo não tem faixa de áudio.")
-        if "invalid data" in err or "could not find codec" in err or "moov atom not found" in err:
-            raise TranscribeError("Não consegui ler esse arquivo: formato não reconhecido ou arquivo corrompido.")
-        raise TranscribeError("Não consegui extrair o áudio: " + proc.stderr.strip()[-300:])
-
-
-def _duration(path):
-    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
-                          "default=nw=1:nk=1", path], capture_output=True, text=True)
-    try:
-        return float(out.stdout.strip())
-    except ValueError:
-        return 0.0
+def _progress(job, transcribed):
+    dur = job["duration"] or 0
+    pct = int(transcribed / dur * 100) if dur else 0
+    _set(job, transcribed=round(transcribed, 1), progress=max(0, min(99, pct)))
 
 
 # ---------------------------------------------------------------- motor gratuito
@@ -398,114 +579,138 @@ def _threads():
     return os.cpu_count() or 2
 
 
-def _local(job, wav, settings):
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError:
-        raise TranscribeError("O motor gratuito não está instalado nesta imagem.", 500)
-    name = settings["local_model"]
+def _get_model(name, job=None):
+    from faster_whisper import WhisperModel
     with _model_lock:
         if _model_cache["name"] != name:
-            _set(job, stage="Carregando o modelo de transcrição (na 1ª vez ele é baixado, pode levar alguns minutos)")
-            _model_cache["model"] = None
+            if job:
+                _set(job, stage="Carregando o modelo de transcrição (na 1ª vez ele é baixado, pode levar alguns minutos)")
+            _model_cache.update(name=None, model=None)
+            t0 = time.time()
             _model_cache["model"] = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=_threads(),
                                                  download_root=MODELS_DIR)
             _model_cache["name"] = name
-        model = _model_cache["model"]
-    _set(job, stage="Transcrevendo")
+            log.info("modelo %s pronto em %.0fs", name, time.time() - t0)
+        return _model_cache["model"]
+
+
+def preload_model_async():
+    """Deixa o modelo gratuito carregado na memória para a transcrição começar na hora."""
+    if not PRELOAD_MODEL:
+        return
+    s = load_settings()
+    if s["engine"] != "local" or _model_cache["name"] == s["local_model"]:
+        return
+
+    def run():
+        try:
+            import faster_whisper  # noqa
+        except ImportError:
+            return
+        try:
+            _get_model(s["local_model"])
+        except Exception as exc:  # noqa
+            log.warning("não consegui pré-carregar o modelo %s: %s", s["local_model"], exc)
+
+    threading.Thread(target=run, name="pre-carga", daemon=True).start()
+
+
+def _local(job, pcm, settings):
+    try:
+        import faster_whisper  # noqa
+    except ImportError:
+        raise TranscribeError("O motor gratuito não está instalado nesta imagem.", 500)
+    import numpy as np
+    model = _get_model(settings["local_model"], job)
     skip = bool(settings.get("skip_silence"))
     lang = None if job["language"] == "auto" else job["language"]
-    # áudio já está em WAV 16 kHz mono: entregamos as amostras prontas
-    # (evita a leitura via PyAV, que muda entre versões)
-    import numpy as np
-    import wave
-    with wave.open(wav, "rb") as fh:
-        audio = np.frombuffer(fh.readframes(fh.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
-    segments, _info = model.transcribe(audio, language=lang, beam_size=int(os.environ.get("WHISPER_BEAM", "1")),
-                                       vad_filter=skip,
-                                       # sem isto o Whisper descarta janelas de 30 s que "parecem" não ter
-                                       # fala (canto, fala com música de fundo) e a transcrição sai cortada
-                                       no_speech_threshold=0.6 if skip else None,
-                                       condition_on_previous_text=False)
-    duration = job["duration"] or 1
-    parts, last_end = [], None
-    for seg in segments:
-        text = seg.text.strip()
-        if re.fullmatch(r"[\s♪♫♬♩🎵🎶*.\-]*|\[(música|music|musique|aplausos|applause)\]|\((música|music)\)", text, re.I):
-            text = ""  # só símbolo de música: não é texto
-        if text:
-            if last_end is not None:
-                parts.append("\n\n" if seg.start - last_end > 2.0 else " ")
-            parts.append(text)
-            last_end = seg.end
-        _set(job, progress=min(99, int(seg.end / duration * 100)))
-    return "".join(parts)
+    beam = int(os.environ.get("WHISPER_BEAM", "1"))
+    text, last_end, prompt = "", None, None
+    _set(job, stage="Transcrevendo")
+    for start, block in pcm.blocks(FIRST_BLOCK_SECONDS, LOCAL_BLOCK_SECONDS):
+        audio = block.astype(np.float32) / 32768.0
+        segments, _info = model.transcribe(
+            audio, language=lang, beam_size=beam, vad_filter=skip,
+            # sem isto o Whisper descarta janelas de 30 s que "parecem" não ter fala
+            # (canto, fala com música de fundo) e a transcrição sai cortada
+            no_speech_threshold=0.6 if skip else None,
+            condition_on_previous_text=False, initial_prompt=prompt)
+        for seg in segments:
+            t = seg.text.strip()
+            if MUSIC_ONLY.fullmatch(t):
+                t = ""  # só símbolo de música: não é texto
+            if t:
+                s0 = start + seg.start
+                if text:
+                    text += "\n\n" if last_end is not None and s0 - last_end > 2.0 else " "
+                text += t
+                last_end = start + seg.end
+                _set(job, text=text)
+            _progress(job, start + seg.end)
+        _progress(job, start + len(block) / SR)
+        prompt = text[-200:] or None
+    return text
 
 
 # ---------------------------------------------------------------- motor OpenAI
-def _split_ranges(wav, duration, target):
-    """Divide em partes de ~target segundos, cortando em silêncios quando possível."""
-    if duration <= target * 1.1:
-        return [(0.0, duration)]
-    proc = subprocess.run(["ffmpeg", "-hide_banner", "-nostdin", "-i", wav, "-af",
-                           "silencedetect=noise=-35dB:d=0.35", "-f", "null", "-"], capture_output=True, text=True)
-    starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", proc.stderr)]
-    ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", proc.stderr)]
-    mids = [(a + b) / 2 for a, b in zip(starts, ends)]
-    cuts, pos = [], 0.0
-    while duration - pos > target * 1.1:
-        ideal = pos + target
-        near = [m for m in mids if ideal - 30 <= m <= ideal + 15 and m > pos + 10]
-        cut = min(near, key=lambda m: abs(m - ideal)) if near else ideal
-        cuts.append(cut)
-        pos = cut
-    edges = [0.0] + cuts + [duration]
-    return list(zip(edges[:-1], edges[1:]))
-
-
-def _openai(job, wav, workdir, settings):
+def _openai(job, pcm, settings):
     key = settings["openai_key"]
     if not key:
         raise TranscribeError("Configure a chave da OpenAI em Configurações da transcrição.")
-    ranges = _split_ranges(wav, job["duration"], OPENAI_CHUNK_SECONDS)
-    texts, prompt = [], ""
-    for i, (a, b) in enumerate(ranges):
-        _set(job, stage=f"Transcrevendo parte {i + 1} de {len(ranges)}" if len(ranges) > 1 else "Transcrevendo",
-             progress=int(i / len(ranges) * 100))
-        part = os.path.join(workdir, f"parte{i}.mp3")
-        proc = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-ss", f"{a:.3f}",
-                               "-t", f"{b - a:.3f}", "-i", wav, "-c:a", "libmp3lame", "-b:a", "48k", part],
-                              capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise TranscribeError("Falha ao preparar o áudio: " + proc.stderr[-200:])
-        text = _openai_request(key, settings["openai_model"], part, job["language"], prompt).strip()
-        if text:
-            texts.append(text)
-            prompt = text[-400:]
-        os.unlink(part)
-    return " ".join(texts)
+    results, done_secs, lock = {}, [0.0], threading.Lock()
+
+    def work(idx, block):
+        text = _openai_request(key, settings["openai_model"], _encode_mp3(block), job["language"], "").strip()
+        with lock:
+            results[idx] = text
+            done_secs[0] += len(block) / SR
+            ordered, i = [], 0
+            while i in results:  # texto parcial sempre na ordem certa
+                if results[i]:
+                    ordered.append(results[i])
+                i += 1
+            _set(job, text=" ".join(ordered))
+            _progress(job, done_secs[0])
+
+    _set(job, stage="Transcrevendo")
+    futures = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=OPENAI_PARALLEL) as pool:
+        for idx, (_start, block) in enumerate(pcm.blocks(OPENAI_CHUNK_SECONDS, OPENAI_CHUNK_SECONDS)):
+            futures.append(pool.submit(work, idx, block))
+            if any(f.done() and f.exception() for f in futures):
+                break
+        for fut in futures:
+            fut.result()  # repassa erros (chave inválida etc.)
+    return " ".join(results[i] for i in sorted(results) if results[i])
 
 
-def _multipart(fields, file_field, file_path):
+def _encode_mp3(block):
+    proc = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "s16le", "-ar", str(SR), "-ac", "1",
+                           "-i", "pipe:0", "-c:a", "libmp3lame", "-b:a", "48k", "-f", "mp3", "pipe:1"],
+                          input=block.tobytes(), capture_output=True)
+    if proc.returncode != 0:
+        raise TranscribeError("Falha ao preparar o áudio: " + proc.stderr.decode("utf-8", "replace")[-200:])
+    return proc.stdout
+
+
+def _multipart(fields, file_field, data):
     boundary = "----ytbc" + secrets.token_hex(12)
     out = bytearray()
     for name, value in fields.items():
         out += f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode()
-    with open(file_path, "rb") as fh:
-        data = fh.read()
     out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{file_field}\"; filename=\"audio.mp3\"\r\n"
             "Content-Type: audio/mpeg\r\n\r\n").encode() + data + b"\r\n"
     out += f"--{boundary}--\r\n".encode()
     return bytes(out), boundary
 
 
-def _openai_request(key, model, path, language, prompt):
+def _openai_request(key, model, mp3, language, prompt):
     fields = {"model": model, "response_format": "json"}
     if language and language != "auto":
         fields["language"] = language
     if prompt:
         fields["prompt"] = prompt
-    body, boundary = _multipart(fields, "file", path)
+    body, boundary = _multipart(fields, "file", mp3)
     url = OPENAI_BASE_URL + "/v1/audio/transcriptions"
     last = None
     for attempt in range(4):

@@ -601,6 +601,148 @@
     $("tr-drop").classList.remove("has"); $("tr-drop-title").textContent = "Clique para escolher um vídeo ou áudio";
     $("tr-drop-sub").textContent = "ou arraste o arquivo para cá · MP4, MOV, MKV, MP3, WAV, M4A, OGG… até 4 GB"; } });
 
+  // ---------- extração do áudio no navegador (MP4/MOV/M4A): só separa os bytes do áudio, sem converter
+  const fourcc = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+  async function findTopBox(f, type) {
+    let off = 0;
+    while (off + 8 <= f.size) {
+      const h = new DataView(await f.slice(off, off + 16).arrayBuffer());
+      let size = h.getUint32(0), hdr = 8;
+      const t = fourcc(h, 4);
+      if (size === 1) { size = Number(h.getBigUint64(8)); hdr = 16; } else if (size === 0) size = f.size - off;
+      if (size < hdr) return null;
+      if (t === type) return { off, size, hdr };
+      off += size;
+    }
+    return null;
+  }
+  function boxes(dv, start, end) {
+    const out = []; let o = start;
+    while (o + 8 <= end) {
+      let size = dv.getUint32(o), hdr = 8;
+      const t = fourcc(dv, o + 4);
+      if (size === 1) { size = Number(dv.getBigUint64(o + 8)); hdr = 16; } else if (size === 0) size = end - o;
+      if (size < hdr || o + size > end) break;
+      out.push({ t, o, body: o + hdr, end: o + size }); o += size;
+    }
+    return out;
+  }
+  const sub = (dv, box, path) => path.reduce((b, t) => b && boxes(dv, b.body, b.end).find(x => x.t === t), box);
+  function desc(dv, o) {
+    const tag = dv.getUint8(o++); let len = 0, n = 0, c;
+    do { c = dv.getUint8(o++); len = (len << 7) | (c & 0x7f); n++; } while ((c & 0x80) && n < 4);
+    return { tag, len, body: o };
+  }
+  function parseAsc(bytes) {
+    let pos = 0;
+    const bits = (n) => { let v = 0; for (let i = 0; i < n; i++, pos++) v = (v << 1) | ((bytes[pos >> 3] >> (7 - (pos & 7))) & 1); return v; };
+    let aot = bits(5); if (aot === 31) aot = 32 + bits(6);
+    const sfi = bits(4); if (sfi === 15) return null;
+    const chan = bits(4);
+    if (aot === 5 || aot === 29) { if (bits(4) === 15) bits(24); aot = bits(5); if (aot === 31) aot = 32 + bits(6); }
+    if (aot < 1 || aot > 4 || chan < 1 || chan > 7) return null;
+    return { profile: aot - 1, sfi, chan };
+  }
+  function audioCodec(dv, entry) {
+    if (entry.t === ".mp3") return { kind: "mp3" };
+    if (entry.t !== "mp4a") return null;
+    let e = -1;
+    for (let k = entry.body + 28; k + 4 <= entry.end; k++) if (fourcc(dv, k) === "esds") { e = k + 8; break; }
+    if (e < 0) return null;
+    let d = desc(dv, e); if (d.tag !== 3) return null;
+    let o = d.body + 2; const fl = dv.getUint8(o++);
+    if (fl & 0x80) o += 2; if (fl & 0x40) o += dv.getUint8(o) + 1; if (fl & 0x20) o += 2;
+    d = desc(dv, o); if (d.tag !== 4) return null;
+    const oti = dv.getUint8(d.body);
+    if (oti === 0x69 || oti === 0x6b) return { kind: "mp3" };
+    if (![0x40, 0x66, 0x67, 0x68].includes(oti)) return null;
+    d = desc(dv, d.body + 13); if (d.tag !== 5) return null;
+    const cfg = parseAsc(new Uint8Array(dv.buffer, d.body, d.len));
+    return cfg ? { kind: "adts", cfg } : null;
+  }
+  async function mp4AudioPlan(f) {
+    const moov = await findTopBox(f, "moov");
+    if (!moov || moov.size > 300 * 1024 * 1024) return null;
+    const dv = new DataView(await f.slice(moov.off, moov.off + moov.size).arrayBuffer());
+    for (const trak of boxes(dv, moov.hdr, moov.size).filter(b => b.t === "trak")) {
+      const mdia = sub(dv, trak, ["mdia"]); const hdlr = sub(dv, mdia, ["hdlr"]);
+      if (!hdlr || fourcc(dv, hdlr.body + 8) !== "soun") continue;
+      const stbl = sub(dv, mdia, ["minf", "stbl"]); if (!stbl) continue;
+      const stsd = sub(dv, stbl, ["stsd"]), stsz = sub(dv, stbl, ["stsz"]), stsc = sub(dv, stbl, ["stsc"]);
+      const stco = sub(dv, stbl, ["stco"]) || sub(dv, stbl, ["co64"]);
+      if (!stsd || !stsz || !stsc || !stco) continue;
+      const entry = boxes(dv, stsd.body + 8, stsd.end)[0]; if (!entry) continue;
+      const codec = audioCodec(dv, entry); if (!codec) continue;
+      const count = dv.getUint32(stsz.body + 8), fixed = dv.getUint32(stsz.body + 4);
+      if (!count) return null;  // MP4 fragmentado: sobe o arquivo como está
+      const sizes = new Uint32Array(count);
+      for (let i = 0; i < count; i++) sizes[i] = fixed || dv.getUint32(stsz.body + 12 + i * 4);
+      const nChunks = dv.getUint32(stco.body + 4), big = stco.t === "co64";
+      const offs = new Array(nChunks);
+      for (let i = 0; i < nChunks; i++) offs[i] = big ? Number(dv.getBigUint64(stco.body + 8 + i * 8)) : dv.getUint32(stco.body + 8 + i * 4);
+      const nRuns = dv.getUint32(stsc.body + 4), chunks = [];
+      let si = 0;
+      for (let r = 0; r < nRuns && si < count; r++) {
+        const first = dv.getUint32(stsc.body + 8 + r * 12), spc = dv.getUint32(stsc.body + 12 + r * 12);
+        const last = r + 1 < nRuns ? dv.getUint32(stsc.body + 8 + (r + 1) * 12) - 1 : nChunks;
+        for (let c = first; c <= last && si < count; c++) {
+          const n = Math.min(spc, count - si); let bytes = 0;
+          for (let k = 0; k < n; k++) bytes += sizes[si + k];
+          chunks.push({ off: offs[c - 1], first: si, n, bytes }); si += n;
+        }
+      }
+      if (si !== count) return null;
+      let total = 0; for (let i = 0; i < count; i++) total += sizes[i];
+      if (codec.kind === "adts") total += 7 * count;
+      const mdhd = sub(dv, mdia, ["mdhd"]); let duration = 0;
+      if (mdhd) { const v1 = dv.getUint8(mdhd.body) === 1;
+        const ts = dv.getUint32(mdhd.body + (v1 ? 20 : 12)), du = v1 ? Number(dv.getBigUint64(mdhd.body + 24)) : dv.getUint32(mdhd.body + 16);
+        duration = ts ? du / ts : 0; }
+      return { ...codec, sizes, chunks, total, duration };
+    }
+    return null;
+  }
+  async function* audioPieces(f, plan) {
+    const { profile, sfi, chan } = plan.cfg || {};
+    let parts = [], acc = 0, target = 256 * 1024;
+    const flush = () => { const out = new Uint8Array(acc); let p = 0; for (const x of parts) { out.set(x, p); p += x.length; } parts = []; acc = 0; return out; };
+    for (let i = 0; i < plan.chunks.length; i += 64) {
+      const batch = plan.chunks.slice(i, i + 64);
+      const datas = await Promise.all(batch.map(c => f.slice(c.off, c.off + c.bytes).arrayBuffer()));
+      batch.forEach((c, j) => {
+        let p = 0;
+        for (let k = 0; k < c.n; k++) {
+          const size = plan.sizes[c.first + k];
+          if (plan.kind === "adts") {
+            const len = size + 7;
+            parts.push(new Uint8Array([0xff, 0xf1, ((profile & 3) << 6) | ((sfi & 15) << 2) | ((chan >> 2) & 1),
+              ((chan & 3) << 6) | ((len >> 11) & 3), (len >> 3) & 0xff, ((len & 7) << 5) | 0x1f, 0xfc]));
+            acc += 7;
+          }
+          parts.push(new Uint8Array(datas[j], p, size)); acc += size; p += size;
+        }
+      });
+      if (acc >= target) { yield flush(); target = Math.min(8 * 1024 * 1024, target * 2); }
+    }
+    if (acc) yield flush();
+  }
+  async function* filePieces(f) {
+    let off = 0, size = 1024 * 1024;  // começa pequeno para a transcrição iniciar logo
+    while (off < f.size) { const piece = f.slice(off, off + size); yield piece; off += piece.size; size = Math.min(48 * 1024 * 1024, size * 2); }
+  }
+  function mediaDuration(f) {
+    return new Promise(res => {
+      const el = document.createElement(f.type.startsWith("audio") ? "audio" : "video");
+      const url = URL.createObjectURL(f);
+      const done = (v) => { URL.revokeObjectURL(url); res(isFinite(v) && v > 0 ? v : 0); };
+      el.preload = "metadata"; el.onloadedmetadata = () => done(el.duration); el.onerror = () => done(0);
+      setTimeout(() => done(0), 4000); el.src = url;
+    });
+  }
+  window.YTBC_TR = { mp4AudioPlan, audioPieces,
+    async extract(f) { const plan = await mp4AudioPlan(f); if (!plan) return null; const out = [];
+      for await (const p of audioPieces(f, plan)) out.push(p); return { kind: plan.kind, duration: plan.duration, total: plan.total, blob: new Blob(out) }; } };
+
   function putChunk(id, offset, blob, onProg) {
     return new Promise((resolve, reject) => {
       const x = new XMLHttpRequest();
@@ -613,54 +755,90 @@
       x.send(blob);
     });
   }
-  async function upload(f) {
-    const res = await api("/api/upload/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: f.name, size: f.size }) });
-    const init = await res.json();
-    if (!init.ok) throw new Error(init.error);
-    const CH = init.chunk_size || 50 * 1024 * 1024;
+  async function streamUpload(id, pieces, total, ctl) {
     let off = 0; const t0 = Date.now();
-    while (off < f.size) {
-      const blob = f.slice(off, off + CH);
+    for await (const piece of pieces) {
+      if (ctl.stop) return;
+      const len = piece.byteLength ?? piece.size;
       for (let tries = 1; ; tries++) {
         try {
-          await putChunk(init.upload_id, off, blob, (loaded) => {
-            const done = off + loaded, pct = done / f.size * 100, secs = (Date.now() - t0) / 1000;
-            setStatus("info", `<span class="spin"></span>&nbsp; Enviando o arquivo… ${pct.toFixed(0)}% (${fmtSize(done)} de ${fmtSize(f.size)}${secs > 3 ? ", " + fmtSize(done / secs) + "/s" : ""})`);
-            bar(pct * 0.25);
-          });
+          await putChunk(id, off, piece, (loaded) => { ctl.up = (off + loaded) / total; ctl.rate = (off + loaded) / Math.max(1, (Date.now() - t0) / 1000); render(ctl); });
           break;
-        } catch (e) { if (e.fatal || tries >= 4) throw e; setStatus("info", "Conexão instável, tentando de novo…"); await sleep(2000 * tries); }
+        } catch (e) { if (e.fatal || tries >= 4) throw e; await sleep(2000 * tries); }
       }
-      off += blob.size;
+      off += len; ctl.up = off / total; render(ctl);
     }
-    return init.upload_id;
+    ctl.upDone = true; render(ctl);
   }
 
   // ---------- transcrição
+  function render(ctl) {
+    const job = ctl.job || {};
+    const el = Math.round((Date.now() - ctl.t0) / 1000);
+    const bits = [];
+    if (ctl.total && !ctl.upDone) {
+      bits.push(`Enviando ${ctl.audioOnly ? "só o áudio" : "o arquivo"} ${Math.floor((ctl.up || 0) * 100)}%` +
+        (ctl.audioOnly ? ` (${fmtSize(ctl.total)} em vez de ${fmtSize(ctl.original)})` : ` de ${fmtSize(ctl.total)}`));
+    }
+    if (job.status === "queued") bits.push(`na fila (posição ${job.position})`);
+    else if (job.transcribed > 0) bits.push(`transcrito ${fmtDur(job.transcribed)}${job.duration ? " de " + fmtDur(job.duration) : ""}`);
+    else if (job.stage) bits.push(job.stage.toLowerCase());
+    setStatus("info", `<span class="spin"></span>&nbsp; ${esc(bits.join(" · ").replace(/^./, c => c.toUpperCase()))} · ${el}s`);
+    const p = job.duration ? job.transcribed / job.duration * 100 : (ctl.up || 0) * 50;
+    bar(Math.max(p, 2));
+    if (job.text && job.status !== "done") {
+      const t = $("tr-text"), atEnd = t.scrollTop + t.clientHeight >= t.scrollHeight - 30;
+      if (t.value !== job.text) { t.value = job.text; if (atEnd) t.scrollTop = t.scrollHeight; }
+      $("tr-result").classList.add("show"); $("tr-copy").disabled = true;
+      $("tr-meta").textContent = "Transcrevendo… texto parcial (o botão de copiar libera no fim)";
+    }
+  }
+
   async function start(ev) {
     ev.preventDefault();
     if (busy) return;
     const url = $("tr-url").value.trim();
     if (!file && !url) { setStatus("err", "Escolha um arquivo ou cole um link do YouTube."); return; }
     busy = true; $("tr-go").disabled = true;
-    $("tr-result").classList.remove("show"); $("tr-copy").disabled = true;
+    $("tr-result").classList.remove("show"); $("tr-copy").disabled = true; $("tr-text").value = "";
+    const ctl = { t0: Date.now() };
     try {
-      const body = { language: $("tr-lang").value };
-      if (file) { body.upload_id = await upload(file); lastName = file.name.replace(/\.[^.]+$/, ""); }
-      else { body.url = url; lastName = "transcricao"; }
-      setStatus("info", `<span class="spin"></span>&nbsp; Iniciando a transcrição…`); bar(25);
-      const res = await api("/api/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const d = await res.json();
-      if (!d.ok) throw new Error(d.error);
-      ls.set(LS_JOB, JSON.stringify({ id: d.job.id, name: lastName }));
-      await poll(d.job.id);
-    } catch (e) { setStatus("err", esc(e.message || "Erro inesperado.")); bar(null); }
+      const language = $("tr-lang").value;
+      if (file) {
+        lastName = file.name.replace(/\.[^.]+$/, "");
+        setStatus("info", `<span class="spin"></span>&nbsp; Preparando o arquivo…`);
+        let plan = null;
+        if (/\.(mp4|m4v|m4a|mov|3gp|3g2)$/i.test(file.name) || /mp4|quicktime|3gpp/.test(file.type)) {
+          try { plan = await mp4AudioPlan(file); } catch (e) { plan = null; }
+        }
+        const duration = (plan && plan.duration) || await mediaDuration(file);
+        Object.assign(ctl, { audioOnly: !!plan, total: plan ? plan.total : file.size, original: file.size, up: 0 });
+        const res = await api("/api/transcribe/start", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name, size: ctl.total, language, format: plan ? plan.kind : "file", duration }) });
+        const d = await res.json();
+        if (!d.ok) throw new Error(d.error);
+        ls.set(LS_JOB, JSON.stringify({ id: d.job.id, name: lastName }));
+        ctl.job = d.job;
+        const upload = streamUpload(d.upload_id, plan ? audioPieces(file, plan) : filePieces(file), ctl.total, ctl)
+          .catch(e => { ctl.stop = true; throw e; });
+        await Promise.all([upload, poll(d.job.id, ctl)]);
+      } else {
+        lastName = "transcricao";
+        setStatus("info", `<span class="spin"></span>&nbsp; Iniciando a transcrição…`); bar(2);
+        const res = await api("/api/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, language }) });
+        const d = await res.json();
+        if (!d.ok) throw new Error(d.error);
+        ls.set(LS_JOB, JSON.stringify({ id: d.job.id, name: lastName }));
+        await poll(d.job.id, ctl);
+      }
+    } catch (e) { ctl.stop = true; setStatus("err", esc(e.message || "Erro inesperado.")); bar(null); }
     finally { busy = false; $("tr-go").disabled = false; }
   }
 
-  async function poll(id) {
-    const t0 = Date.now(); let fails = 0;
+  async function poll(id, ctl = { t0: Date.now() }) {
+    let fails = 0;
     for (;;) {
+      if (ctl.stop) return;
       let job;
       try {
         const res = await api("/api/jobs/" + id);
@@ -668,13 +846,12 @@
         if (!d.ok) { if (res.status === 404) ls.del(LS_JOB); throw Object.assign(new Error(d.error), { fatal: true }); }
         job = d.job; fails = 0;
       } catch (e) { if (e.fatal || ++fails > 20) throw e; await sleep(3000); continue; }
-      const el = Math.round((Date.now() - t0) / 1000);
+      if (ctl.stop) return;
+      ctl.job = job;
       if (job.status === "done") { showResult(job); return; }
-      if (job.status === "error") { ls.del(LS_JOB); throw new Error(job.error); }
-      const extra = job.status === "queued" ? ` (posição ${job.position} na fila)` : job.progress ? ` ${job.progress}%` : "";
-      setStatus("info", `<span class="spin"></span>&nbsp; ${esc(job.stage)}${extra}${job.duration ? " · áudio de " + fmtDur(job.duration) : ""} · ${el}s`);
-      bar(25 + (job.progress || 0) * 0.75);
-      await sleep(1500);
+      if (job.status === "error") { ls.del(LS_JOB); ctl.stop = true; throw new Error(job.error); }
+      render(ctl);
+      await sleep(job.text || ctl.total ? 1000 : 1500);
     }
   }
 

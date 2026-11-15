@@ -19,9 +19,10 @@ subprocess.run(["espeak-ng", "-v", "pt-br", "-s", "140", "-w", wav,
                 "Bom dia a todos. Hoje vamos falar sobre consórcio e planejamento financeiro para comprar a casa própria."], check=True)
 call("/api/transcribe/settings", {"engine": "local", "local_model": "base"})
 data = open(wav, "rb").read()
-up = call("/api/upload/init", {"name": "fala.wav", "size": len(data)})
-call(f"/api/upload/{up['upload_id']}?offset=0", raw=data, method="PUT")
-job = call("/api/transcribe", {"upload_id": up["upload_id"]})["job"]
+up = call("/api/transcribe/start", {"name": "fala.wav", "size": len(data), "format": "file"})
+job = up["job"]
+for off in range(0, len(data), 50000):
+    call(f"/api/upload/{up['upload_id']}?offset={off}", raw=data[off:off + 50000], method="PUT")
 t0 = time.time()
 while job["status"] not in ("done", "error") and time.time() - t0 < 900:
     time.sleep(2)

@@ -16,6 +16,13 @@ Endereço: **https://ytbconversor.wtatech.com.br**
 
 Se você recarregar a página no meio, ela retoma a transcrição em andamento.
 
+**Rapidez da transcrição:**
+- Em vídeos MP4, MOV e M4A, o próprio navegador separa só o áudio (sem converter, sem perda) e envia apenas ele: um vídeo de 2 GB com 1 hora sobe cerca de 60 MB.
+- A transcrição começa enquanto o envio ainda está acontecendo, e o texto vai aparecendo na tela. Outros formatos (MKV, MP3, WAV…) sobem como estão, mas também são transcritos durante o envio.
+- O modelo gratuito fica carregado na memória do servidor, pronto para começar na hora.
+- Na OpenAI, até 4 partes de 5 minutos são transcritas ao mesmo tempo.
+- O que mais acelera o modo gratuito é dar mais processadores ao serviço (variável `LIMITE_CPU`) ou usar um modelo menor.
+
 O motor gratuito transcreve **o áudio inteiro**, inclusive músicas e falas com música de fundo. A opção "Pular trechos sem fala (modo rápido)" existe para palestras e reuniões com muitas pausas, mas pode pular canto. Deixe desmarcada para ter tudo.
 
 **Espaço na VPS:** o arquivo enviado fica só temporariamente. Ele é apagado assim que o áudio é extraído (antes mesmo de terminar a transcrição), e a pasta de trabalho é apagada ao terminar. Envios abandonados (navegador fechado no meio) são apagados sozinhos depois de 1 hora, e qualquer sobra é limpa quando o serviço reinicia. O texto da transcrição fica só na memória (24 h) e no seu navegador. O que fica guardado de forma permanente é apenas o modelo gratuito baixado (cerca de 500 MB para o Small), para não precisar baixar de novo a cada uso.
@@ -110,7 +117,7 @@ Nó **HTTP Request**:
 
 Sem `start`, `end` e `format`, vale o padrão (00:00 a 02:00, WAV).
 
-Transcrição pela API: `POST /api/upload/init` (`name`, `size`) → `PUT /api/upload/{id}?offset=N` (partes de até 50 MB) → `POST /api/transcribe` (`upload_id` ou `url`, opcional `language`) → consultar `GET /api/jobs/{id}` até `status` = `done` (texto em `text`). Sempre com o header `X-Access-Key`.
+Transcrição pela API: `POST /api/transcribe/start` (`name`, `size`, opcional `language`) → `PUT /api/upload/{upload_id}?offset=N` (partes de até 50 MB; a transcrição já começa) → consultar `GET /api/jobs/{job.id}` até `status` = `done` (texto em `text`). Para link do YouTube: `POST /api/transcribe` com `url`. Sempre com o header `X-Access-Key`.
 
 ---
 

@@ -444,6 +444,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/transcribe":
                 self._require_auth()
                 return self._start_transcription(self._json_body())
+            if path == "/api/transcribe/start":
+                # envio + transcrição juntos: começa a transcrever enquanto o áudio chega
+                self._require_auth()
+                b = self._json_body()
+                out = tr.start_stream(b.get("name"), b.get("size"), b.get("language") or None,
+                                      b.get("format") or "file", b.get("duration"))
+                return self._json(200, {"ok": True, **out})
             self._error(404, "Rota não encontrada.")
         except (UserError, tr.TranscribeError) as exc:
             self._error(exc.status, str(exc))
@@ -487,7 +494,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise tr.TranscribeError(str(exc))
                 if not info.get("stream_url"):
                     raise tr.TranscribeError("O YouTube não entregou o áudio deste vídeo.")
-                return info["stream_url"], info.get("headers") or {}, info.get("title") or "vídeo"
+                return (info["stream_url"], info.get("headers") or {}, info.get("title") or "vídeo",
+                        info.get("duration") or 0)
 
             job = tr.create_job({"url": url, "resolver": resolver}, language)
         else:
