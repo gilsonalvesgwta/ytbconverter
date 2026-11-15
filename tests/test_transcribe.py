@@ -375,6 +375,7 @@ class TestLocalEngine(base.Base):
         faltando = [p for p, ws in partes.items() if not any(w in text for w in ws)]
         self.assertEqual(faltando, [], text)
         self.assertAlmostEqual(job["transcribed"], 150, delta=1)               # passou pelo áudio todo
+        self.assertLess(len(text.split()), 40, text)                           # sem enxurrada de texto inventado
 
 
 if __name__ == "__main__":

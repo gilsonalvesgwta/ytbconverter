@@ -643,6 +643,8 @@ def _local(job, pcm, settings):
                          seg.no_speech_prob, seg.avg_logprob, t)
             if MUSIC_ONLY.fullmatch(t):
                 t = ""  # só símbolo de música: não é texto
+            if t and seg.no_speech_prob > 0.7 and seg.avg_logprob < -1.5:
+                t = ""  # quase certamente não é fala e o modelo "chutou" (texto inventado em trecho só de música)
             if t and t == last_text and seg.avg_logprob < -1.0:
                 t = ""  # repetição com baixa confiança (alucinação em trecho só de música); refrões reais passam
             if t:
