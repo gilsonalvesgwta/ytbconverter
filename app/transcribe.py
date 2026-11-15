@@ -789,6 +789,20 @@ MUSIC_EVERY = float(os.environ.get("MUSIC_EVERY_SECONDS", "10"))  # uma marcaç�
 MUSIC_RMS = float(os.environ.get("MUSIC_MIN_RMS", "0.015"))       # abaixo disso é silêncio (~ -36 dBFS)
 
 
+def compression_ratio(text):
+    import zlib
+    b = text.encode("utf-8")
+    return len(b) / len(zlib.compress(b)) if len(b) > 20 else 0.0
+
+
+_LOOP = re.compile(r"(\b.{2,60}?)(?:[\s,.]*\1){2,}", re.I | re.S)
+
+
+def collapse_loops(text):
+    """'ter que ter que ter que' → 'ter que' (repetição em laço do modelo)."""
+    return re.sub(r"\s+", " ", _LOOP.sub(r"\1", text)).strip()
+
+
 def music_tag(language):
     return "[music]" if (language or "en").startswith("en") else "[Música]"
 
@@ -899,6 +913,10 @@ def _local(job, pcm, settings):
                 log.info("seg %.1f-%.1f nsp=%.2f lp=%.2f %r", start + seg.start, start + seg.end, nsp, lp, t)
             if MUSIC_ONLY.fullmatch(t):
                 t = ""  # só símbolo de música: não é texto
+            if t and compression_ratio(t) > 2.4:
+                # laço de repetição ("ter que ter que ter que…"): em trecho sem fala é texto inventado;
+                # com fala, fica uma ocorrência só
+                t = "" if nsp > 0.5 else collapse_loops(t)
             if t and nsp > 0.7 and lp < -1.5:
                 t = ""  # quase certamente não é fala e o modelo "chutou" (texto inventado em trecho só de música)
             if t and t == last_text and lp < -1.0:
