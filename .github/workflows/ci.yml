@@ -33,8 +33,7 @@ jobs:
       - name: Comparativo de velocidade (simples x lote)
         continue-on-error: true
         run: |
-          python tests/bench_whisper.py base
-          python tests/bench_whisper.py small
+          python tests/bench_variants.py
 
   imagem:
     name: Imagem amd64 + arm64
