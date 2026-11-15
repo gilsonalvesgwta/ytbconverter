@@ -205,7 +205,7 @@
       </div>
       <div id="tr-cap-extra" hidden style="margin-top:10px">
         <label class="check"><input type="checkbox" id="tr-ts" checked> Incluir marcações de tempo [mm:ss]</label>
-        <div class="hint">Copia a transcrição que o próprio YouTube já tem (legenda do criador ou automática): leva só alguns segundos, de qualquer tamanho de vídeo.</div>
+        <div class="hint">Ao colar o link, a transcrição que o próprio YouTube já tem (legenda do criador ou automática) aparece sozinha em segundos. Depois é só um clique para copiar ou baixar.</div>
       </div>
       <div class="summary" id="tr-summary"></div>
       <div class="status" id="tr-status"></div>
@@ -615,14 +615,24 @@
   $("tr-url").addEventListener("input", syncMode);
   $("tr-cap-lang").value = "orig"; $("tr-ts").checked = true;  // padrão: idioma original, com marcações de tempo
   ls.del("ytbc.cap");
-  let warmTimer = null;
-  $("tr-url").addEventListener("input", () => {  // já lê os dados do vídeo enquanto você confere: ao clicar, começa direto
-    clearTimeout(warmTimer); const u = $("tr-url").value.trim();
-    if (/youtu\.?be/i.test(u)) warmTimer = setTimeout(() => api("/api/info", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: u }) }).catch(() => {}), 400);
-  });
   $("tr-url").addEventListener("input", () => { if ($("tr-url").value.trim() && file) { file = null; $("tr-file").value = "";
     $("tr-drop").classList.remove("has"); $("tr-drop-title").textContent = "Clique para escolher um vídeo ou áudio";
     $("tr-drop-sub").textContent = "ou arraste o arquivo para cá · MP4, MOV, MKV, MP3, WAV, M4A, OGG… até 4 GB"; } });
+  // link do YouTube: busca a transcrição sozinha ao colar (e ao trocar idioma/marcações)
+  let autoTimer = null, lastAuto = "";
+  const isYouTube = (u) => /^(https?:\/\/)?([\w-]+\.)*(youtube\.com|youtu\.be|youtube-nocookie\.com)\/\S+/i.test(u) || /^http:\/\/127\.0\.0\.1[:\/].*\.info\.json$/.test(u);
+  function autoFetch(now) {
+    clearTimeout(autoTimer); syncMode();
+    const u = $("tr-url").value.trim();
+    if (file || !isYouTube(u)) return;
+    const key = u + "|" + $("tr-cap-lang").value + "|" + $("tr-ts").checked;
+    if (key === lastAuto) return;
+    autoTimer = setTimeout(() => { if (busy) return autoFetch(); lastAuto = key; start(null); }, now ? 0 : 350);
+  }
+  $("tr-url").addEventListener("input", () => autoFetch());
+  $("tr-url").addEventListener("paste", () => setTimeout(() => autoFetch(true), 0));
+  $("tr-cap-lang").addEventListener("change", () => autoFetch(true));
+  $("tr-ts").addEventListener("change", () => autoFetch(true));
 
   // ---------- extração do áudio no navegador (MP4/MOV/M4A): só separa os bytes do áudio, sem converter
   const fourcc = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));

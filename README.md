@@ -10,7 +10,7 @@ Endereço: **https://ytbconversor.wtatech.com.br**
 
 ## Transcrição (aba "Transcrever")
 
-**Link do YouTube → transcrição pronta (segundos):** cole o link e clique em **Buscar transcrição**. O sistema copia a transcrição que o próprio YouTube já tem (legenda do criador, ou a automática do YouTube), sem baixar nem transcrever nada, como as extensões do Chrome. Padrão: idioma original do áudio, exatamente como o YouTube disponibiliza, com marcações de tempo [mm:ss]. Opcional: tradução automática do YouTube (Português, Inglês ou Espanhol) e desmarcar as marcações de tempo. Se o vídeo não tiver legenda, aparece o botão **Transcrever o áudio (mais demorado)**.
+**Link do YouTube → transcrição pronta (segundos):** cole o link: a transcrição aparece sozinha, sem precisar clicar em nada. Depois é um clique para **Copiar transcrição** ou **Baixar .txt**. O sistema copia a transcrição que o próprio YouTube já tem (legenda do criador, ou a automática do YouTube), sem baixar nem transcrever nada, como as extensões do Chrome. Padrão: idioma original do áudio, exatamente como o YouTube disponibiliza, com marcações de tempo [mm:ss]. Opcional: tradução automática do YouTube (Português, Inglês ou Espanhol) e desmarcar as marcações de tempo. Se o vídeo não tiver legenda, aparece o botão **Transcrever o áudio (mais demorado)**.
 
 **Arquivo do computador → transcrição do áudio:**
 
