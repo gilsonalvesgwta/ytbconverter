@@ -474,6 +474,8 @@ class TestYouTubeCaptions(base.Base):
                      "automatic_captions": {"en-orig": tr("/en-orig.json3"), "en": tr("/en-orig.json3"), "pt": tr("/pt-trad.json3")}},
             "vtt": {"title": "VTT", "language": "", "duration": 4, "subtitles": {},
                     "automatic_captions": {"en-orig": tr("/rolante.vtt", "vtt")}},
+            "traducao": {"title": "Só tradução", "language": "pt", "duration": 3,
+                         "subtitles": {"en": tr("/en-orig.json3")}, "automatic_captions": {"en": tr("/en-orig.json3")}},
             "nada": {"title": "Sem legenda", "language": "pt", "duration": 10, "subtitles": {}, "automatic_captions": {}},
         }
         for k, v in infos.items():
@@ -502,14 +504,17 @@ class TestYouTubeCaptions(base.Base):
         st, d = self.get("manual", ts=True)
         self.assertEqual(d["text"], "[00:00] Olá pessoal\n[00:02] tudo bem?\n[00:09] novo assunto\n[01:05] fim")
 
-    def test_auto_and_translation(self):
+    def test_auto_original_never_translated(self):
         st, d = self.get("auto")
         self.assertEqual((st, d["kind"], d["language"], d["text"]), (200, "auto", "en", "hello everyone welcome"))
-        st, d = self.get("auto", "pt")
-        self.assertEqual((st, d["kind"], d["text"]), (200, "traduzida", "olá a todos bem-vindos"))
-        st, d = self.get("auto", "es")
+        st, d = self.get("auto", "pt")  # mesmo pedindo outro idioma: sempre o original
+        self.assertEqual((st, d["language"], d["text"]), (200, "en", "hello everyone welcome"))
+
+    def test_only_foreign_subtitles_not_used(self):
+        """Vídeo em português sem legenda em português, só uma tradução em inglês: não usa a tradução."""
+        st, d = self.get("traducao")
         self.assertEqual(st, 404)
-        self.assertIn("Idioma original", d["error"])
+        self.assertIn("idioma original", d["error"])
 
     def test_vtt_rolling_no_duplicates(self):
         st, d = self.get("vtt")
@@ -523,7 +528,6 @@ class TestYouTubeCaptions(base.Base):
     def test_auth_and_validation(self):
         self.assertEqual(base.request(self.base, "/api/youtube/transcript", {"url": self.url("manual")})[0], 401)
         self.assertEqual(base.request(self.base, "/api/youtube/transcript", {"url": "https://exemplo.com/x"}, headers=AUTH)[0], 400)
-        self.assertEqual(base.request(self.base, "/api/youtube/transcript", {"url": self.url("manual"), "lang": "xx"}, headers=AUTH)[0], 400)
 
 
 class TestNoStorageLeft(base.Base):
