@@ -65,7 +65,7 @@ def wait_job(base_url, job_id, timeout=300):
     while time.time() - t0 < timeout:
         st, _, body = base.request(base_url, "/api/jobs/" + job_id, headers=AUTH)
         job = json.loads(body)["job"]
-        if job["status"] in ("done", "error"):
+        if job["status"] in ("done", "error", "cancelled"):
             return job
         time.sleep(0.3)
     raise AssertionError("transcrição não terminou")
@@ -263,10 +263,169 @@ class TestOpenAIEngine(base.Base):
         self.assertTrue("Não consegui" in job["error"] or "Não encontrei" in job["error"], job["error"])
         self.assertEqual(base.request(self.base, "/api/transcribe/start", {"name": "x", "size": 10, "format": "exe"}, headers=AUTH)[0], 400)
 
+    def test_9_cancel_keeps_partial_text(self):
+        """Parar no meio: guarda o texto já transcrito, para de receber e não deixa arquivo."""
+        self.save({"engine": "openai", "openai_key": GOOD_KEY})
+        adts = os.path.join(TMP, "cancelar.aac")
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", self.audio, "-c:a", "copy", "-f", "adts", adts], check=True)
+        uid, jid, data = self.stream_start(adts, "adts", duration=150)
+        part = int(len(data) * 0.6)
+        self.put(uid, 0, data[:part])
+        t0 = time.time()
+        while time.time() - t0 < 20:
+            job = json.loads(base.request(self.base, "/api/jobs/" + jid, headers=AUTH)[2])["job"]
+            if job["text"]:
+                break
+            time.sleep(0.1)
+        st, _, body = base.request(self.base, f"/api/jobs/{jid}/cancel", {}, headers=AUTH)
+        self.assertEqual(st, 200, body)
+        job = wait_job(self.base, jid)
+        self.assertEqual(job["status"], "cancelled", job)
+        self.assertEqual(job["text"], "[60s]")                                   # parcial guardado
+        self.assertEqual(self.put(uid, part, data[part:])[0], 404)               # envio encerrado
+        self.assertEqual(os.listdir(self.env["UPLOAD_DIR"]), [])
+        # parar de novo não dá erro; já dá para começar outra
+        self.assertEqual(base.request(self.base, f"/api/jobs/{jid}/cancel", {}, headers=AUTH)[0], 200)
+        short = os.path.join(TMP, "outra.wav")
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=d=10", short], check=True)
+        uid2, jid2, d2 = self.stream_start(short, "file")
+        self.put(uid2, 0, d2)
+        self.assertEqual(wait_job(self.base, jid2)["status"], "done")
+        self.assertEqual(base.request(self.base, "/api/jobs/" + "f" * 32 + "/cancel", {}, headers=AUTH)[0], 404)
+
     def test_5_clear_key(self):
         self.save({"engine": "openai", "openai_key": GOOD_KEY})
         st, _, body = self.save({"engine": "local", "clear_openai_key": True})
         self.assertFalse(json.loads(body)["openai_key_set"])
+
+
+class FakeYouTube(http.server.BaseHTTPRequestHandler):
+    """Imita o googlevideo: conexão contínua sai em "tempo real" (lenta); faixas saem rápido."""
+    files, log, active, peak = {}, [], [0], [0]
+    lock = threading.Lock()
+    honor_range = True
+
+    def log_message(self, *a):
+        pass
+
+    def do_HEAD(self):
+        self.do_GET(head=True)
+
+    def do_GET(self, head=False):
+        data = FakeYouTube.files[self.path]
+        rng = self.headers.get("Range") if FakeYouTube.honor_range else None
+        with FakeYouTube.lock:
+            FakeYouTube.active[0] += 1
+            FakeYouTube.peak[0] = max(FakeYouTube.peak[0], FakeYouTube.active[0])
+            FakeYouTube.log.append(rng)
+        try:
+            if rng:
+                a, b_raw = rng.split("=")[1].split("-")
+                a, b = int(a), min(int(b_raw or len(data) - 1), len(data) - 1)
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {a}-{b}/{len(data)}")
+                # como o real: faixa fechada e pequena sai rápido; "do byte X até o fim" sai em tempo real
+                body, slow = data[a:b + 1], (not b_raw) or (b - a + 1 > 10 * 1024 * 1024)
+            else:
+                self.send_response(200)
+                body, slow = data, True
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            if head:
+                return
+            time.sleep(0.15)  # latência por pedido
+            step = 16 * 1024
+            for i in range(0, len(body), step):
+                self.wfile.write(body[i:i + step])
+                if slow:
+                    time.sleep(0.25)  # ~64 KB/s: o freio de "tempo real"
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            with FakeYouTube.lock:
+                FakeYouTube.active[0] -= 1
+
+
+class TestYouTubeFastDownload(base.Base):
+    """O áudio do YouTube é baixado em faixas paralelas, sem o freio de tempo real."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.yt = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeYouTube)
+        threading.Thread(target=cls.yt.serve_forever, daemon=True).start()
+        cls.fake = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeOpenAI)
+        threading.Thread(target=cls.fake.serve_forever, daemon=True).start()
+        src = os.path.join(TMP, "yt-fonte.wav")
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                        "aevalsrc='sin(440*2*PI*t)*lt(mod(t,20),18)':s=48000:d=150", src], check=True)
+        for name, args in [("audio.webm", ["-c:a", "libopus", "-b:a", "128k", "-f", "webm"]),
+                           ("audio.m4a", ["-c:a", "aac", "-b:a", "128k", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4"])]:
+            out = os.path.join(TMP, name)
+            subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", src] + args + [out], check=True)
+            FakeYouTube.files["/" + name] = open(out, "rb").read()
+        cls.env = {"ACCESS_PASSWORD": PASSWORD, "OPENAI_CHUNK_SECONDS": "60", "DOWNLOAD_CHUNK_BYTES": str(200 * 1024),
+                   "OPENAI_BASE_URL": f"http://127.0.0.1:{cls.fake.server_address[1]}", "UPLOAD_DIR": tempfile.mkdtemp(dir=TMP)}
+        super().setUpClass()
+        base.request(cls.base, "/api/transcribe/settings", {"engine": "openai", "openai_key": GOOD_KEY}, headers=AUTH)
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        cls.yt.shutdown()
+        cls.fake.shutdown()
+
+    def run_link(self, name):
+        FakeYouTube.log.clear()
+        FakeYouTube.peak[0] = 0
+        FakeOpenAI.calls.clear()
+        url = f"http://127.0.0.1:{self.yt.server_address[1]}/{name}"
+        t0 = time.time()
+        st, _, body = base.request(self.base, "/api/transcribe", {"url": url}, headers=AUTH)
+        self.assertEqual(st, 200, body)
+        job = wait_job(self.base, json.loads(body)["job"]["id"], timeout=120)
+        return job, time.time() - t0
+
+    def test_parallel_ranges_fast(self):
+        for name in ["audio.webm", "audio.m4a"]:
+            with self.subTest(formato=name):
+                FakeYouTube.honor_range = True
+                size = len(FakeYouTube.files["/" + name])
+                job, took = self.run_link(name)
+                self.assertEqual(job["status"], "done", job)
+                self.assertEqual(job["text"], "[60s] [60s] [30s]")
+                self.assertGreaterEqual(len([r for r in FakeYouTube.log if r]), size // (200 * 1024))  # tudo em faixas
+                self.assertGreaterEqual(FakeYouTube.peak[0], 3)                                     # em paralelo
+                # numa conexão contínua (freio de ~64 KB/s) levaria size/64KB segundos
+                self.assertLess(took, (size / (64 * 1024)) / 3, f"{took:.1f}s para {size} bytes")
+                print(f"\n  {name}: {size // 1024} KB em {took:.1f}s (contínuo levaria ~{size / 65536:.0f}s), pico {FakeYouTube.peak[0]} conexões")
+
+    def test_clip_download_fast(self):
+        """Baixar trecho: o ffmpeg pula direto ao ponto e recebe o áudio em faixas paralelas."""
+        for name, start, end, fmt, dur in [("audio.webm", "00:00", "02:00", "wav", 120),
+                                           ("audio.m4a", "01:00", "02:00", "mp3", 60),
+                                           ("audio.webm", "02:10", "", "mp3", 20)]:
+            with self.subTest(formato=name, trecho=f"{start}-{end}"):
+                FakeYouTube.log.clear()
+                url = f"http://127.0.0.1:{self.yt.server_address[1]}/{name}"
+                t0 = time.time()
+                st, hdrs, body = base.request(self.base, "/api/download",
+                                              {"url": url, "start": start, "end": end, "format": fmt}, headers=AUTH)
+                took = time.time() - t0
+                self.assertEqual(st, 200, body[:300])
+                self.assertAlmostEqual(base.probe(body, "." + fmt)[0], dur, delta=0.3)
+                size = len(FakeYouTube.files["/" + name]) * dur / 150
+                print(f"\n  trecho {start}-{end or 'fim'} {fmt} de {name}: {took:.1f}s (direto levaria ~{size / 65536:.0f}s)")
+                self.assertLess(took, max(4, size / 65536 / 3))
+
+    def test_server_without_ranges_still_works(self):
+        FakeYouTube.honor_range = False
+        try:
+            job, _ = self.run_link("audio.webm")
+        finally:
+            FakeYouTube.honor_range = True
+        self.assertEqual(job["status"], "done", job)
+        self.assertEqual(job["text"], "[60s] [60s] [30s]")
 
 
 class TestNoStorageLeft(base.Base):

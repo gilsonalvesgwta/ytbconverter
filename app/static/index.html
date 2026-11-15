@@ -105,6 +105,8 @@
   textarea{width:100%;min-height:260px;resize:vertical;background:#061a30;border:1px solid var(--line);color:var(--text);
     border-radius:10px;padding:14px;font:15px/1.6 inherit;font-family:inherit;outline:none}
   .btn.copied{background:var(--ok)}
+  .stop{color:#ffb4b4;border-color:rgba(255,93,93,.55);font-weight:600;font-size:14px;padding:0 18px}
+  .stop:hover{color:#fff;background:rgba(255,93,93,.18);border-color:var(--err)}
   .radio{display:flex;gap:10px;flex-wrap:wrap}
   .radio label{flex:1;min-width:200px;display:flex;gap:9px;align-items:flex-start;background:#061a30;border:1px solid var(--line);
     border-radius:10px;padding:11px 12px;cursor:pointer;color:var(--text);font-size:14px;margin:0}
@@ -197,6 +199,7 @@
         <button class="btn" id="tr-go" type="submit" style="height:46px">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
           <span>Transcrever</span></button>
+        <button class="ghost stop" id="tr-stop" type="button" hidden style="height:46px" title="Parar e manter o texto transcrito até agora">■ Parar</button>
       </div>
       <div class="summary" id="tr-summary"></div>
       <div class="status" id="tr-status"></div>
@@ -515,7 +518,7 @@
   const LS_JOB = "ytbc.lastJob";
   const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } },
                set(k,v){ try { localStorage.setItem(k,v); } catch {} }, del(k){ try { localStorage.removeItem(k); } catch {} } };
-  let file = null, settings = null, loaded = false, busy = false, lastName = "transcricao";
+  let file = null, settings = null, loaded = false, busy = false, lastName = "transcricao", current = null;
 
   function setStatus(kind, html, el = $("tr-status")) { el.className = "status " + (kind || ""); el.innerHTML = html || ""; }
   function bar(p) { $("tr-bar").hidden = p == null; if (p != null) $("tr-bar").firstElementChild.style.width = Math.max(2, Math.min(100, p)) + "%"; }
@@ -597,6 +600,11 @@
   ["dragenter","dragover"].forEach(ev => $("tr-drop").addEventListener(ev, e => { e.preventDefault(); $("tr-drop").classList.add("over"); }));
   ["dragleave","drop"].forEach(ev => $("tr-drop").addEventListener(ev, e => { e.preventDefault(); $("tr-drop").classList.remove("over"); }));
   $("tr-drop").addEventListener("drop", e => pick(e.dataTransfer.files[0]));
+  let warmTimer = null;
+  $("tr-url").addEventListener("input", () => {  // já lê os dados do vídeo enquanto você confere: ao clicar, começa direto
+    clearTimeout(warmTimer); const u = $("tr-url").value.trim();
+    if (/youtu\.?be/i.test(u)) warmTimer = setTimeout(() => api("/api/info", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: u }) }).catch(() => {}), 400);
+  });
   $("tr-url").addEventListener("input", () => { if ($("tr-url").value.trim() && file) { file = null; $("tr-file").value = "";
     $("tr-drop").classList.remove("has"); $("tr-drop-title").textContent = "Clique para escolher um vídeo ou áudio";
     $("tr-drop-sub").textContent = "ou arraste o arquivo para cá · MP4, MOV, MKV, MP3, WAV, M4A, OGG… até 4 GB"; } });
@@ -743,9 +751,11 @@
     async extract(f) { const plan = await mp4AudioPlan(f); if (!plan) return null; const out = [];
       for await (const p of audioPieces(f, plan)) out.push(p); return { kind: plan.kind, duration: plan.duration, total: plan.total, blob: new Blob(out) }; } };
 
-  function putChunk(id, offset, blob, onProg) {
+  function putChunk(id, offset, blob, onProg, ctl) {
     return new Promise((resolve, reject) => {
       const x = new XMLHttpRequest();
+      if (ctl) ctl.xhr = x;
+      x.onabort = () => reject(Object.assign(new Error("Envio interrompido."), { fatal: true }));
       x.open("PUT", `/api/upload/${id}?offset=${offset}`);
       const h = authHeaders(); Object.keys(h).forEach(k => x.setRequestHeader(k, h[k]));
       x.upload.onprogress = (e) => e.lengthComputable && onProg(e.loaded);
@@ -762,9 +772,9 @@
       const len = piece.byteLength ?? piece.size;
       for (let tries = 1; ; tries++) {
         try {
-          await putChunk(id, off, piece, (loaded) => { ctl.up = (off + loaded) / total; ctl.rate = (off + loaded) / Math.max(1, (Date.now() - t0) / 1000); render(ctl); });
+          await putChunk(id, off, piece, (loaded) => { ctl.up = (off + loaded) / total; ctl.rate = (off + loaded) / Math.max(1, (Date.now() - t0) / 1000); render(ctl); }, ctl);
           break;
-        } catch (e) { if (e.fatal || tries >= 4) throw e; await sleep(2000 * tries); }
+        } catch (e) { if (ctl.stop) return; if (e.fatal || tries >= 4) throw e; await sleep(2000 * tries); }
       }
       off += len; ctl.up = off / total; render(ctl);
     }
@@ -799,9 +809,10 @@
     if (busy) return;
     const url = $("tr-url").value.trim();
     if (!file && !url) { setStatus("err", "Escolha um arquivo ou cole um link do YouTube."); return; }
-    busy = true; $("tr-go").disabled = true;
+    busy = true; $("tr-go").disabled = true; $("tr-stop").hidden = false;
     $("tr-result").classList.remove("show"); $("tr-copy").disabled = true; $("tr-text").value = "";
     const ctl = { t0: Date.now() };
+    current = ctl;
     try {
       const language = $("tr-lang").value;
       if (file) {
@@ -831,8 +842,27 @@
         ls.set(LS_JOB, JSON.stringify({ id: d.job.id, name: lastName }));
         await poll(d.job.id, ctl);
       }
-    } catch (e) { ctl.stop = true; setStatus("err", esc(e.message || "Erro inesperado.")); bar(null); }
-    finally { busy = false; $("tr-go").disabled = false; }
+    } catch (e) { ctl.stop = true; if (!ctl.cancelled) { setStatus("err", esc(e.message || "Erro inesperado.")); bar(null); } }
+    finally { if (current === ctl) { busy = false; current = null; $("tr-go").disabled = false; $("tr-stop").hidden = true; } }
+  }
+
+  async function stopTranscription() {
+    const ctl = current; if (!ctl) return;
+    ctl.stop = true; ctl.cancelled = true;
+    try { ctl.xhr && ctl.xhr.abort(); } catch {}
+    $("tr-stop").disabled = true;
+    let job = ctl.job;
+    if (job && job.id) {
+      try { const r = await api("/api/jobs/" + job.id + "/cancel", { method: "POST" }); const d = await r.json(); if (d.ok) job = d.job; } catch {}
+      // aguarda um instante o servidor fechar o texto parcial
+      for (let i = 0; i < 6 && job && job.status === "running"; i++) {
+        await sleep(400);
+        try { const d = await (await api("/api/jobs/" + job.id)).json(); if (d.ok) job = d.job; } catch { break; }
+      }
+    }
+    ls.del(LS_JOB);
+    showResult(job || { status: "cancelled", text: $("tr-text").value, name: lastName });
+    busy = false; current = null; $("tr-go").disabled = false; $("tr-stop").hidden = true; $("tr-stop").disabled = false;
   }
 
   async function poll(id, ctl = { t0: Date.now() }) {
@@ -848,7 +878,7 @@
       } catch (e) { if (e.fatal || ++fails > 20) throw e; await sleep(3000); continue; }
       if (ctl.stop) return;
       ctl.job = job;
-      if (job.status === "done") { showResult(job); return; }
+      if (job.status === "done" || job.status === "cancelled") { if (job.status === "cancelled") ls.del(LS_JOB); showResult(job); return; }
       if (job.status === "error") { ls.del(LS_JOB); ctl.stop = true; throw new Error(job.error); }
       render(ctl);
       await sleep(job.text || ctl.total ? 1000 : 1500);
@@ -861,6 +891,13 @@
     $("tr-text").value = text;
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     const took = job.finished && job.started ? Math.round(job.finished - job.started) : 0;
+    if (job.status === "cancelled") {
+      $("tr-meta").textContent = `${job.name || ""} · parada em ${fmtDur(job.transcribed || 0)}${job.duration ? " de " + fmtDur(job.duration) : ""} · ${words.toLocaleString("pt-BR")} palavras`;
+      $("tr-result").classList.toggle("show", !!text); $("tr-copy").disabled = !text;
+      setStatus("info", text ? "■ Transcrição parada. O texto transcrito até aqui está abaixo e pode ser copiado. Já pode escolher outro vídeo ou arquivo."
+                             : "■ Transcrição parada. Já pode escolher outro vídeo ou arquivo.");
+      return;
+    }
     $("tr-meta").textContent = `${job.name} · ${fmtDur(job.duration)} de áudio · ${words.toLocaleString("pt-BR")} palavras${took ? " · feito em " + fmtDur(took) : ""}`;
     $("tr-result").classList.add("show"); $("tr-copy").disabled = !text;
     setStatus("ok", "✔ Transcrição concluída. Clique em <b>Copiar transcrição</b> para copiar todo o texto.");
@@ -884,6 +921,7 @@
 
   $("tr-form").addEventListener("submit", start);
   $("tr-copy").addEventListener("click", copyText);
+  $("tr-stop").addEventListener("click", stopTranscription);
   $("tr-txt").addEventListener("click", downloadTxt);
   document.querySelectorAll('input[name="tr-engine"]').forEach(r => r.addEventListener("change", toggleEngine));
   $("tr-save").addEventListener("click", () => saveSettings());
@@ -896,9 +934,10 @@
     if (last && last.id) {
       lastName = last.name || lastName;
       setTimeout(async () => {
-        try { busy = true; $("tr-go").disabled = true; await poll(last.id); }
-        catch (e) { setStatus("", ""); bar(null); }
-        finally { busy = false; $("tr-go").disabled = false; }
+        const ctl = { t0: Date.now(), job: { id: last.id } };
+        try { busy = true; current = ctl; $("tr-go").disabled = true; $("tr-stop").hidden = false; await poll(last.id, ctl); }
+        catch (e) { if (!ctl.cancelled) { setStatus("", ""); bar(null); } }
+        finally { if (current === ctl) { busy = false; current = null; $("tr-go").disabled = false; $("tr-stop").hidden = true; } }
       }, 600);
     }
   } catch {}

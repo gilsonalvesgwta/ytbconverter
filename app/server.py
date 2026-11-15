@@ -60,6 +60,31 @@ _info_lock = threading.Lock()
 INFO_TTL = 600
 
 
+# ---------------------------------------------------------------- proxy rápido do YouTube
+# O YouTube entrega em "tempo real" quem lê numa conexão contínua. O ffmpeg lê por este
+# proxy interno, que busca o áudio em faixas pequenas, várias ao mesmo tempo (sem freio).
+PROXY_CHUNK = int(os.environ.get("PROXY_CHUNK_BYTES", str(1024 * 1024)))
+PROXY_PARALLEL = max(1, int(os.environ.get("PROXY_PARALLEL", "6")))
+_proxy = {}
+_proxy_lock = threading.Lock()
+
+
+def proxy_register(url, headers):
+    import secrets
+    token = secrets.token_hex(16)
+    with _proxy_lock:
+        now = time.time()
+        for k in [k for k, v in _proxy.items() if now - v["t"] > 3600]:
+            del _proxy[k]
+        _proxy[token] = {"url": url, "headers": dict(headers or {}), "total": None, "t": now}
+    return token, f"http://127.0.0.1:{PORT}/internal/stream/{token}"
+
+
+def proxy_release(token):
+    with _proxy_lock:
+        _proxy.pop(token, None)
+
+
 class UserError(Exception):
     """Erro com mensagem em português, mostrada ao usuário."""
 
@@ -98,7 +123,7 @@ def validate_url(url):
     url = (url or "").strip()
     if not url:
         raise UserError("Cole o link do vídeo do YouTube.")
-    if ALLOW_LOCAL_TEST and url.startswith("file://"):
+    if ALLOW_LOCAL_TEST and (url.startswith("file://") or url.startswith("http://127.0.0.1")):
         return url
     parsed = urllib.parse.urlparse(url if "://" in url else "https://" + url)
     host = (parsed.hostname or "").lower()
@@ -157,6 +182,15 @@ def extract_info(url):
         for k in [k for k, v in _info_cache.items() if now - v["_t"] >= INFO_TTL]:
             del _info_cache[k]
 
+    if ALLOW_LOCAL_TEST and url.startswith("http://127.0.0.1"):
+        out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
+                              "default=nw=1:nk=1", url], capture_output=True, text=True)
+        info = {"id": "local-http", "title": "teste http", "duration": float(out.stdout.strip() or 0),
+                "thumbnail": "", "uploader": "teste", "stream_url": url, "headers": {"User-Agent": "teste"}}
+        info["_t"] = now
+        with _info_lock:
+            _info_cache[url] = info
+        return info
     if ALLOW_LOCAL_TEST and url.startswith("file://"):
         path = urllib.parse.unquote(url[len("file://"):])
         if not os.path.isfile(path):
@@ -271,11 +305,9 @@ def make_clip(url, opts, workdir):
         raise UserError("O YouTube não entregou o áudio deste vídeo.", 502)
 
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y"]
+    token = None
     if stream.startswith("http"):
-        hdrs = "".join(f"{k}: {v}\r\n" for k, v in (info.get("headers") or {}).items())
-        if hdrs:
-            cmd += ["-headers", hdrs]
-        cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
+        token, stream = proxy_register(stream, info.get("headers") or {})
     cmd += ["-ss", f"{start:.3f}", "-i", stream, "-t", f"{length:.3f}", "-map", "0:a:0"] + encode_args(opts) + [out]
 
     t0 = time.time()
@@ -288,6 +320,9 @@ def make_clip(url, opts, workdir):
         with _info_lock:
             _info_cache.pop(url, None)
         fallback_clip(url, start, end, opts, workdir, out)
+    finally:
+        if token:
+            proxy_release(token)
 
     if not os.path.isfile(out) or os.path.getsize(out) < 100:
         raise UserError("O arquivo de áudio saiu vazio. Confira o intervalo escolhido.", 502)
@@ -391,6 +426,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
+        if path.startswith("/internal/stream/"):
+            return self._proxy_stream(path.rsplit("/", 1)[-1])
         try:
             if path in ("/", "/index.html"):
                 return self._static("index.html")
@@ -444,6 +481,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/transcribe":
                 self._require_auth()
                 return self._start_transcription(self._json_body())
+            m = re.fullmatch(r"/api/jobs/([0-9a-f]{32})/cancel", path)
+            if m:
+                self._require_auth()
+                job = tr.cancel_job(m.group(1))
+                if not job:
+                    raise UserError("Transcrição não encontrada.", 404)
+                return self._json(200, {"ok": True, "job": job})
             if path == "/api/transcribe/start":
                 # envio + transcrição juntos: começa a transcrever enquanto o áudio chega
                 self._require_auth()
@@ -511,6 +555,66 @@ class Handler(BaseHTTPRequestHandler):
         if os.path.isfile(COOKIES_FILE):
             os.unlink(COOKIES_FILE)
         self._json(200, {"ok": True})
+
+    def _proxy_stream(self, token):
+        """Só para o ffmpeg deste servidor (127.0.0.1 + token aleatório)."""
+        with _proxy_lock:
+            p = _proxy.get(token)
+        if self.client_address[0] != "127.0.0.1" or not p:
+            return self._error(404, "Página não encontrada.")
+        import concurrent.futures
+        m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
+        start = int(m.group(1)) if m and m.group(1) else 0
+        req_end = int(m.group(2)) if m and m.group(2) else None
+        try:
+            status, hdrs, first = tr._get_range(p["url"], p["headers"], start, start + PROXY_CHUNK - 1)
+        except tr.TranscribeError as exc:
+            return self._error(502, str(exc))
+        if status == 416:
+            self.send_response(416)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        cr = hdrs.get("Content-Range") or ""
+        if status != 206 or "/" not in cr or not cr.rsplit("/", 1)[1].strip().isdigit():
+            # origem sem suporte a faixas: repassa como veio
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(first)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(first)
+            return
+        total = int(cr.rsplit("/", 1)[1])
+        end = min(req_end if req_end is not None else total - 1, total - 1)
+        self.send_response(206)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Content-Type", "application/octet-stream")
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=PROXY_PARALLEL)
+        try:
+            self.wfile.write(first[: end - start + 1])
+            pos = start + len(first)
+            starts = list(range(pos, end + 1, PROXY_CHUNK))
+            pending, nxt = [], 0
+            while nxt < len(starts) and len(pending) < PROXY_PARALLEL:
+                a = starts[nxt]
+                pending.append(pool.submit(tr._get_range, p["url"], p["headers"], a, min(a + PROXY_CHUNK, end + 1) - 1))
+                nxt += 1
+            while pending:
+                _st, _h, data = pending.pop(0).result()
+                self.wfile.write(data)
+                if nxt < len(starts):
+                    a = starts[nxt]
+                    pending.append(pool.submit(tr._get_range, p["url"], p["headers"], a, min(a + PROXY_CHUNK, end + 1) - 1))
+                    nxt += 1
+        except (BrokenPipeError, ConnectionResetError, tr.TranscribeError):
+            self.close_connection = True  # o ffmpeg já tem o que precisa (ou pulou para outro ponto)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
     def _static(self, name):
         path = os.path.join(STATIC_DIR, name)

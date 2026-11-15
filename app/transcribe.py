@@ -333,6 +333,36 @@ def get_job(jid):
     return out
 
 
+class Cancelled(Exception):
+    pass
+
+
+def cancel_job(jid):
+    """Para a transcrição: na fila, nem começa; rodando, para no próximo trecho e guarda o texto parcial."""
+    with _jobs_lock:
+        job = _jobs.get(jid)
+        if not job:
+            return None
+        if job["status"] in ("done", "error", "cancelled"):
+            return {k: v for k, v in job.items() if not k.startswith("_")}
+        job["_cancel"] = True
+        if job["status"] == "queued":
+            job.update(status="cancelled", stage="Parada", finished=time.time())
+        pcm = job.get("_pcm")
+    if pcm and pcm.proc and pcm.proc.poll() is None:
+        pcm.proc.kill()  # para de ler/decodificar na hora
+    src = job.get("_source") or {}
+    if src.get("upload_id") and job["status"] == "cancelled":
+        with _uploads_lock:
+            _drop_upload(src["upload_id"])
+    return get_job(jid)
+
+
+def _check_cancel(job):
+    if job.get("_cancel"):
+        raise Cancelled()
+
+
 def _set(job, **kw):
     with _jobs_lock:
         job.update(kw)
@@ -343,7 +373,7 @@ def _worker():
         jid = _queue.get()
         with _jobs_lock:
             job = _jobs.get(jid)
-        if job:
+        if job and not job.get("_cancel"):
             _run(job)
 
 
@@ -364,7 +394,7 @@ class PcmStream:
 
     def start(self):
         src, cmd = self.src, ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin"]
-        feed = None
+        feed, feed_url = None, None
         if self.upload_id:
             with _uploads_lock:
                 u = _uploads.get(self.upload_id)
@@ -385,18 +415,22 @@ class PcmStream:
             if duration and not self.job["duration"]:
                 _set(self.job, duration=float(duration))
             if url.startswith("http"):
-                hdrs = "".join(f"{k}: {v}\r\n" for k, v in (headers or {}).items())
-                if hdrs:
-                    cmd += ["-headers", hdrs]
-                cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
-            cmd += ["-i", url]
+                # o YouTube entrega em "tempo real" quem lê numa conexão contínua; baixamos em
+                # faixas de 10 MB, várias ao mesmo tempo, e entregamos ao ffmpeg na ordem
+                cmd += ["-i", "pipe:0"]
+                feed_url = (url, headers or {})
+            else:
+                cmd += ["-i", url]
         cmd += ["-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(SR), "-f", "s16le", "pipe:1"]
-        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE if feed else subprocess.DEVNULL,
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE if (feed or feed_url) else subprocess.DEVNULL,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         threading.Thread(target=self._read_out, daemon=True).start()
         threading.Thread(target=self._read_err, daemon=True).start()
         if feed:
             threading.Thread(target=self._feed, args=(feed,), daemon=True).start()
+        elif feed_url:
+            _set(self.job, stage="Baixando o áudio")
+            threading.Thread(target=self._feed_url, args=feed_url, daemon=True).start()
         elif self.upload_id:
             threading.Thread(target=self._drop_when_done, daemon=True).start()
 
@@ -442,6 +476,24 @@ class PcmStream:
                 pass
             with _uploads_lock:
                 _drop_upload(self.upload_id)  # já foi todo lido: libera o espaço na hora
+
+    def _feed_url(self, url, headers):
+        try:
+            ranged_download(url, headers, self.proc.stdin.write, lambda: self.proc.poll() is not None)
+        except (BrokenPipeError, ValueError):
+            pass
+        except TranscribeError as exc:
+            self.fail = str(exc)
+            self.proc.kill()
+        except Exception as exc:  # noqa
+            log.exception("falha ao baixar o áudio")
+            self.fail = "Falha ao baixar o áudio do vídeo: " + str(exc)[:200]
+            self.proc.kill()
+        finally:
+            try:
+                self.proc.stdin.close()
+            except OSError:
+                pass
 
     def _drop_when_done(self):
         self.proc.wait()
@@ -495,6 +547,7 @@ class PcmStream:
         Cada corte cai no ponto mais silencioso dos últimos 15 s do bloco."""
         consumed, target, margin = 0, first, 15
         while True:
+            _check_cancel(self.job)
             avail = self.available()
             with self.lock:
                 eof = self.eof
@@ -522,6 +575,61 @@ class PcmStream:
         return ideal - margin * SR + best * frame + frame // 2
 
 
+DOWNLOAD_CHUNK = int(os.environ.get("DOWNLOAD_CHUNK_BYTES", str(10 * 1024 * 1024)))
+DOWNLOAD_PARALLEL = max(1, int(os.environ.get("DOWNLOAD_PARALLEL", "4")))
+
+
+def _get_range(url, headers, start, end):
+    last = None
+    for attempt in range(4):
+        req = urllib.request.Request(url, headers={**headers, "Range": f"bytes={start}-{end}"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as res:
+                return res.status, res.headers, res.read()
+        except urllib.error.HTTPError as err:
+            if err.code == 416:
+                return 416, err.headers, b""
+            if err.code in (401, 403, 404, 410):
+                raise TranscribeError("O YouTube recusou o download do áudio (link expirado ou bloqueado). Tente de novo.")
+            last = err
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as err:
+            last = err
+        time.sleep(1.5 * (attempt + 1))
+    raise TranscribeError(f"Falha ao baixar o áudio do vídeo: {last}")
+
+
+def ranged_download(url, headers, write, stopped=lambda: False):
+    """Baixa em faixas de DOWNLOAD_CHUNK, até DOWNLOAD_PARALLEL ao mesmo tempo, entregando na ordem."""
+    status, hdrs, first = _get_range(url, headers, 0, DOWNLOAD_CHUNK - 1)
+    write(first)
+    total = None
+    cr = hdrs.get("Content-Range") if status == 206 else None
+    if cr and "/" in cr and cr.rsplit("/", 1)[1].strip().isdigit():
+        total = int(cr.rsplit("/", 1)[1])
+    if status != 206 or total is None or total <= len(first):
+        return len(first)  # servidor não aceita faixas (entregou tudo) ou arquivo pequeno
+    starts = list(range(len(first), total, DOWNLOAD_CHUNK))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=DOWNLOAD_PARALLEL) as pool:
+        pending = []
+        nxt = 0
+        while nxt < len(starts) and len(pending) < DOWNLOAD_PARALLEL * 2:
+            a = starts[nxt]
+            pending.append(pool.submit(_get_range, url, headers, a, min(a + DOWNLOAD_CHUNK, total) - 1))
+            nxt += 1
+        while pending:
+            if stopped():
+                for f in pending:
+                    f.cancel()
+                return None
+            _st, _h, data = pending.pop(0).result()
+            write(data)
+            if nxt < len(starts):
+                a = starts[nxt]
+                pending.append(pool.submit(_get_range, url, headers, a, min(a + DOWNLOAD_CHUNK, total) - 1))
+                nxt += 1
+    return total
+
+
 def _run(job):
     settings = load_settings()
     engine = settings["engine"]
@@ -529,7 +637,9 @@ def _run(job):
          model=settings["local_model"] if engine == "local" else settings["openai_model"])
     src = job["_source"]
     pcm = PcmStream(job, src)
+    _set(job, _pcm=pcm)
     try:
+        _check_cancel(job)
         pcm.start()
         text = _openai(job, pcm, settings) if engine == "openai" else _local(job, pcm, settings)
         if pcm.fail:
@@ -542,13 +652,23 @@ def _run(job):
              finished=time.time())
         log.info("transcrição ok %s %.0fs de áudio em %.0fs (%s/%s)", job["id"][:8], total,
                  job["finished"] - job["started"], job["engine"], job["model"])
+    except Cancelled:
+        _set(job, status="cancelled", stage="Parada", finished=time.time())
+        log.info("transcrição parada pelo usuário %s (%.0fs transcritos)", job["id"][:8], job["transcribed"])
     except TranscribeError as exc:
-        _set(job, status="error", stage="Erro", error=str(exc), finished=time.time())
+        if job.get("_cancel"):
+            _set(job, status="cancelled", stage="Parada", finished=time.time())
+        else:
+            _set(job, status="error", stage="Erro", error=str(exc), finished=time.time())
     except Exception as exc:  # noqa
+        if job.get("_cancel"):
+            _set(job, status="cancelled", stage="Parada", finished=time.time())
+            return
         log.exception("falha na transcrição")
         _set(job, status="error", stage="Erro", error="Erro inesperado na transcrição: " + str(exc)[:300],
              finished=time.time())
     finally:
+        _set(job, _pcm=None)
         if pcm.proc and pcm.proc.poll() is None:
             pcm.proc.kill()
         if src.get("upload_id"):
@@ -637,6 +757,7 @@ def _local(job, pcm, settings):
             no_speech_threshold=0.6 if skip else None,
             condition_on_previous_text=False)
         for seg in segments:
+            _check_cancel(job)
             t = seg.text.strip()
             if LOG_SEGMENTS:
                 log.info("seg %.1f-%.1f nsp=%.2f lp=%.2f %r", start + seg.start, start + seg.end,
@@ -683,11 +804,20 @@ def _openai(job, pcm, settings):
     _set(job, stage="Transcrevendo")
     futures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=OPENAI_PARALLEL) as pool:
-        for idx, (_start, block) in enumerate(pcm.blocks(OPENAI_CHUNK_SECONDS, OPENAI_CHUNK_SECONDS)):
-            futures.append(pool.submit(work, idx, block))
-            if any(f.done() and f.exception() for f in futures):
-                break
+        try:
+            for idx, (_start, block) in enumerate(pcm.blocks(OPENAI_CHUNK_SECONDS, OPENAI_CHUNK_SECONDS)):
+                futures.append(pool.submit(work, idx, block))
+                if any(f.done() and f.exception() for f in futures):
+                    break
+        except Cancelled:
+            for f in futures:
+                f.cancel()
+            raise
         for fut in futures:
+            if job.get("_cancel"):
+                for f in futures:
+                    f.cancel()
+                raise Cancelled()
             fut.result()  # repassa erros (chave inválida etc.)
     return " ".join(results[i] for i in sorted(results) if results[i])
 

@@ -14,13 +14,14 @@ Endereço: **https://ytbconversor.wtatech.com.br**
 2. Clique em **Transcrever**. A barra mostra o envio e o andamento.
 3. No fim, clique em **Copiar transcrição**: copia só o texto, inteiro, com um clique. Também há **Baixar .txt**.
 
-Se você recarregar a página no meio, ela retoma a transcrição em andamento.
+Se você recarregar a página no meio, ela retoma a transcrição em andamento. O botão **■ Parar** interrompe na hora: o texto transcrito até ali fica na tela (pode copiar) e você já pode começar outro vídeo ou arquivo.
 
 **Rapidez da transcrição:**
 - Em vídeos MP4, MOV e M4A, o próprio navegador separa só o áudio (sem converter, sem perda) e envia apenas ele: um vídeo de 2 GB com 1 hora sobe cerca de 60 MB.
 - A transcrição começa enquanto o envio ainda está acontecendo, e o texto vai aparecendo na tela. Outros formatos (MKV, MP3, WAV…) sobem como estão, mas também são transcritos durante o envio.
 - O modelo gratuito fica carregado na memória do servidor, pronto para começar na hora.
 - Na OpenAI, até 4 partes de 5 minutos são transcritas ao mesmo tempo.
+- Link do YouTube: o áudio é baixado em pedaços de 10 MB, 4 ao mesmo tempo. Numa conexão contínua, o YouTube entrega em "tempo real" (1 hora de vídeo levaria 1 hora); em pedaços, chega em segundos.
 - O que mais acelera o modo gratuito é dar mais processadores ao serviço (variável `LIMITE_CPU`) ou usar um modelo menor.
 
 O motor gratuito transcreve **o áudio inteiro**, inclusive músicas e falas com música de fundo. A opção "Pular trechos sem fala (modo rápido)" existe para palestras e reuniões com muitas pausas, mas pode pular canto. Deixe desmarcada para ter tudo.
@@ -38,7 +39,7 @@ Modelos gratuitos: Tiny (mais rápido) → Base → **Small (recomendado)** → 
 A chave da OpenAI fica salva só no servidor (nunca aparece inteira na tela) e exige a variável `SENHA_ACESSO`.
 A API do Claude não transcreve áudio, por isso a opção paga é a da OpenAI.
 
-**Rapidez:** o sistema não baixa o vídeo. Ele pega só a faixa de áudio (sem imagem), pula direto para o início pedido e lê só os bytes do trecho, convertendo ao mesmo tempo. Num áudio de 2 horas, um trecho de 2 minutos fica pronto em menos de 1 segundo de processamento, esteja no começo, no meio ou no fim. Ao colar o link, o sistema já lê os dados do vídeo enquanto você confere a prévia, e o clique em **Baixar** começa direto no corte.
+**Rapidez:** o sistema não baixa o vídeo. O ffmpeg pula direto ao ponto do trecho e recebe o áudio por um intermediário interno que pede ao YouTube pedaços pequenos, vários ao mesmo tempo (sem o freio de "tempo real" que o YouTube aplica em conexões contínuas). Ele pega só a faixa de áudio (sem imagem), pula direto para o início pedido e lê só os bytes do trecho, convertendo ao mesmo tempo. Num áudio de 2 horas, um trecho de 2 minutos fica pronto em menos de 1 segundo de processamento, esteja no começo, no meio ou no fim. Ao colar o link, o sistema já lê os dados do vídeo enquanto você confere a prévia, e o clique em **Baixar** começa direto no corte.
 
 O sistema é **independente** dos outros da VPS (n8n, CRM etc.): não publica nenhuma porta, só recebe acesso pelo Traefik no domínio próprio, e usa nomes exclusivos (`ytbconversor`) de stack, rota e volume.
 
