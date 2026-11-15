@@ -9,7 +9,8 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH \
     APP_VERSION=${APP_VERSION} \
     PORT=8080 \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    HF_HOME=/data/hf
 
 # ffmpeg corta/converte; deno é o motor JavaScript que o yt-dlp usa para o YouTube
 RUN apt-get update \

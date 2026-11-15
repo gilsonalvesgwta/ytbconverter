@@ -1,12 +1,31 @@
 # YTB Conversor
 
-Sistema web para baixar **trechos de áudio de vídeos do YouTube**.
+Sistema web para baixar **trechos de áudio de vídeos do YouTube** e **transcrever vídeos e áudios por completo**.
 Endereço: **https://ytbconversor.wtatech.com.br**
 
 - Cole o link e clique em **Baixar**: o padrão já baixa **do início até 2 minutos (ou o vídeo inteiro, se for menor) em WAV**, na pasta **Downloads**.
 - Em **Configurações** você muda o início e o fim, o formato (WAV, MP3, M4A, FLAC, OGG, OPUS), a qualidade, a taxa de amostragem, mono ou estéreo, o nome do arquivo e a pasta de destino.
 - A opção "Manter estas configurações" guarda suas escolhas no navegador. Desmarcada, o sistema sempre volta ao padrão.
 - A pasta de destino personalizada funciona no **Chrome ou Edge no computador** (o navegador pede permissão uma vez). Nos outros navegadores, o arquivo vai para a pasta de downloads do navegador.
+
+## Transcrição (aba "Transcrever")
+
+1. Clique na área pontilhada e escolha um vídeo ou áudio do computador (MP4, MOV, MKV, MP3, WAV, M4A, OGG… até 4 GB). Também dá para colar um link do YouTube.
+2. Clique em **Transcrever**. A barra mostra o envio e o andamento.
+3. No fim, clique em **Copiar transcrição**: copia só o texto, inteiro, com um clique. Também há **Baixar .txt**.
+
+Se você recarregar a página no meio, ela retoma a transcrição em andamento.
+
+**Motores (em "Configurações da transcrição", configurados uma única vez):**
+
+| Motor | Custo | Observação |
+|---|---|---|
+| **Gratuito** (padrão) | R$ 0 | Whisper rodando na própria VPS. Na 1ª vez com cada modelo, o servidor baixa o modelo (alguns minutos) e guarda. Velocidade depende do processador da VPS. |
+| **OpenAI** | ~US$ 0,003/min (≈ US$ 0,18 por hora de áudio) | Modelo `gpt-4o-mini-transcribe`, o mais barato da OpenAI. Mais rápido. Precisa da chave da API (platform.openai.com/api-keys) e de saldo na conta. |
+
+Modelos gratuitos: Tiny (mais rápido) → Base → **Small (recomendado)** → Medium → Large v3 Turbo (melhor e mais lento).
+A chave da OpenAI fica salva só no servidor (nunca aparece inteira na tela) e exige a variável `SENHA_ACESSO`.
+A API do Claude não transcreve áudio, por isso a opção paga é a da OpenAI.
 
 **Rapidez:** o sistema não baixa o vídeo. Ele pega só a faixa de áudio (sem imagem), pula direto para o início pedido e lê só os bytes do trecho, convertendo ao mesmo tempo. Num áudio de 2 horas, um trecho de 2 minutos fica pronto em menos de 1 segundo de processamento, esteja no começo, no meio ou no fim. Ao colar o link, o sistema já lê os dados do vídeo enquanto você confere a prévia, e o clique em **Baixar** começa direto no corte.
 
@@ -37,6 +56,9 @@ O DNS `ytbconversor.wtatech.com.br` já aponta para a VPS. No Cloudflare, use a 
    |---|---|
    | `TRECHO_MAXIMO_SEGUNDOS` | `3600` (trecho de até 1 hora) |
    | `DOWNLOADS_SIMULTANEOS` | `3` |
+   | `LIMITE_CPU` | `2` (processadores para o serviço; mais = transcrição gratuita mais rápida) |
+   | `LIMITE_MEMORIA` | `3072M` |
+   | `UPLOAD_MAXIMO_MB` | `4096` (arquivo de até 4 GB para transcrever) |
    | `REDE_TRAEFIK` | `Wtatechor3Net` |
    | `RESOLVEDOR_TLS` | `letsencryptresolver` |
    | `ENTRADA_TRAEFIK` | `websecure` |
@@ -54,7 +76,7 @@ O yt-dlp, que é a peça que conversa com o YouTube, também é atualizado sozin
 
 ### Remover
 
-Portainer → **Stacks** → `ytbconversor` → **Delete this stack**. Nada de outros sistemas é afetado. O volume `ytbconversor_dados` (que só guarda os cookies) pode ser apagado em **Volumes**.
+Portainer → **Stacks** → `ytbconversor` → **Delete this stack**. Nada de outros sistemas é afetado. O volume `ytbconversor_dados` (guarda cookies, configurações da transcrição e modelos baixados) pode ser apagado em **Volumes**.
 
 ---
 
@@ -84,13 +106,17 @@ Nó **HTTP Request**:
 
 Sem `start`, `end` e `format`, vale o padrão (00:00 a 02:00, WAV).
 
+Transcrição pela API: `POST /api/upload/init` (`name`, `size`) → `PUT /api/upload/{id}?offset=N` (partes de até 50 MB) → `POST /api/transcribe` (`upload_id` ou `url`, opcional `language`) → consultar `GET /api/jobs/{id}` até `status` = `done` (texto em `text`). Sempre com o header `X-Access-Key`.
+
 ---
 
 ## Para quem mantém o código
 
 - `app/server.py`: servidor (só biblioteca padrão do Python + yt-dlp + ffmpeg). Corta direto do link do áudio com ffmpeg; se falhar, usa o próprio yt-dlp como plano B.
+- `app/transcribe.py`: transcrição (faster-whisper local ou OpenAI), envio em partes e fila de tarefas.
 - `app/static/index.html`: interface.
-- `tests/test_e2e.py`: 18 testes de ponta a ponta sem internet (`python3 tests/test_e2e.py`, precisa de ffmpeg).
+- `tests/test_e2e.py`: 18 testes dos trechos de áudio; `tests/test_transcribe.py`: testes da transcrição (OpenAI simulada + Whisper com voz sintetizada); `tests/smoke_transcribe.py`: teste rápido contra um servidor rodando.
 - A cada envio para `main`, o GitHub Actions roda os testes, testa a imagem e publica `ghcr.io/gilsonalvesgwta/ytbconverter:latest` para **amd64 e arm64** (a VPS é ARM).
 - Só aceita links do YouTube (impede que o sistema seja usado para acessar serviços internos da VPS).
+- O proxy do Cloudflare limita cada envio a 100 MB e cada resposta a 100 segundos: por isso arquivos sobem em partes de 50 MB e a transcrição roda em segundo plano.
 - Atenção ao proxy do Cloudflare: ele corta respostas que levam mais de 100 segundos. Trechos curtos ficam prontos em poucos segundos; trechos muito longos em WAV podem passar disso.

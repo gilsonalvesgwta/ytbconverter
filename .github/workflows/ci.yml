@@ -19,10 +19,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Instalar ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Instalar ffmpeg, espeak-ng e faster-whisper
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng
+          pip install -q faster-whisper
       - name: Rodar testes (cortes, formatos, erros, senha, cookies)
         run: python tests/test_e2e.py
+      - name: Rodar testes da transcrição (OpenAI simulada + Whisper gratuito com voz real)
+        run: python tests/test_transcribe.py
 
   imagem:
     name: Imagem amd64 + arm64
@@ -53,12 +57,18 @@ jobs:
       - name: Teste da imagem (saúde, interface e conversão)
         run: |
           set -e
-          docker run -d --name ytbc -e YTDLP_AUTO_UPDATE=true -p 8080:8080 ytbconversor:teste
+          docker run -d --name ytbc -e YTDLP_AUTO_UPDATE=true -e ACCESS_PASSWORD=ci-senha-123 -p 8080:8080 ytbconversor:teste
           for i in $(seq 1 60); do curl -fs localhost:8080/api/health && break; sleep 2; done; curl -fs localhost:8080/api/health
           curl -fs localhost:8080/ | grep -q "YTB"
           curl -fs localhost:8080/api/config | grep -q '"format": "wav"'
           docker exec ytbc sh -c 'ffmpeg -version | head -1; deno --version | head -1; python -c "import yt_dlp;print(\"yt-dlp\", yt_dlp.version.__version__)"'
           docker logs ytbc
+
+      - name: Transcrição gratuita dentro da imagem (voz sintetizada)
+        run: |
+          sudo apt-get install -y -qq espeak-ng ffmpeg
+          python tests/smoke_transcribe.py http://localhost:8080 ci-senha-123
+          docker logs ytbc | tail -5
 
       - name: Teste real no YouTube (informativo)
         continue-on-error: true
@@ -66,6 +76,7 @@ jobs:
           set -e
           code=$(curl -s -o /tmp/trecho.wav -w '%{http_code}' -X POST localhost:8080/api/download \
             -H 'Content-Type: application/json' \
+            -H 'X-Access-Key: ci-senha-123' \
             -d '{"url":"https://www.youtube.com/watch?v=DBElv4gvD7A","start":"00:00","end":"00:10"}')
           echo "HTTP $code"
           if [ "$code" = "200" ]; then
@@ -97,7 +108,7 @@ jobs:
         run: |
           docker run --rm --platform linux/arm64 -e YTDLP_AUTO_UPDATE=false --entrypoint sh \
             ghcr.io/${{ github.repository }}:${{ steps.v.outputs.versao }} -c \
-            'uname -m; ffmpeg -version | head -1; deno --version | head -1; python -c "import yt_dlp;print(yt_dlp.version.__version__)"'
+            'uname -m; ffmpeg -version | head -1; deno --version | head -1; python -c "import yt_dlp, faster_whisper, ctranslate2;print(yt_dlp.version.__version__, faster_whisper.__version__, ctranslate2.__version__)"'
           echo "### Imagem publicada: \`ghcr.io/${{ github.repository }}:${{ steps.v.outputs.versao }}\` (também \`:latest\`)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Imagem pública? (a VPS baixa sem login)

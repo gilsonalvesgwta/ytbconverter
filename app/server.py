@@ -20,6 +20,8 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import transcribe as tr
+
 # ---------------------------------------------------------------- config
 PORT = int(os.environ.get("PORT", "8080"))
 ACCESS_PASSWORD = os.environ.get("ACCESS_PASSWORD", "").strip()
@@ -403,8 +405,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._info(params)
             if path == "/api/download":
                 return self._download(params)
+            if path == "/api/transcribe/settings":
+                self._require_auth(params)
+                return self._json(200, {"ok": True, **tr.public_settings()})
+            if path.startswith("/api/jobs/"):
+                self._require_auth(params)
+                job = tr.get_job(path.rsplit("/", 1)[-1])
+                if not job:
+                    raise UserError("Transcrição não encontrada (o servidor pode ter reiniciado).", 404)
+                return self._json(200, {"ok": True, "job": job})
             self._error(404, "Página não encontrada.")
-        except UserError as exc:
+        except (UserError, tr.TranscribeError) as exc:
             self._error(exc.status, str(exc))
         except Exception:
             log.exception("erro inesperado")
@@ -423,12 +434,65 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200 if ok else 401, {"ok": ok} if ok else {"ok": False, "error": "Senha incorreta."})
             if path == "/api/cookies":
                 return self._save_cookies()
+            if path == "/api/transcribe/settings":
+                self._require_auth()
+                return self._json(200, {"ok": True, **tr.update_settings(self._json_body(), bool(ACCESS_PASSWORD))})
+            if path == "/api/upload/init":
+                self._require_auth()
+                body = self._json_body()
+                return self._json(200, {"ok": True, **tr.upload_init(body.get("name"), body.get("size"))})
+            if path == "/api/transcribe":
+                self._require_auth()
+                return self._start_transcription(self._json_body())
             self._error(404, "Rota não encontrada.")
-        except UserError as exc:
+        except (UserError, tr.TranscribeError) as exc:
             self._error(exc.status, str(exc))
         except Exception:
             log.exception("erro inesperado")
             self._error(500, "Erro interno. Veja os registros (logs) do serviço.")
+
+    def do_PUT(self):
+        path = urllib.parse.urlparse(self.path).path
+        try:
+            m = re.fullmatch(r"/api/upload/([0-9a-f]{32})", path)
+            if not m:
+                return self._error(404, "Rota não encontrada.")
+            params = self._query()
+            self._require_auth(params)
+            length = int(self.headers.get("Content-Length") or 0)
+            return self._json(200, {"ok": True, **tr.upload_chunk(m.group(1), params.get("offset", 0), self.rfile, length)})
+        except (UserError, tr.TranscribeError) as exc:
+            self.close_connection = True
+            self._error(exc.status, str(exc))
+        except Exception:
+            log.exception("erro inesperado")
+            self.close_connection = True
+            self._error(500, "Erro interno. Veja os registros (logs) do serviço.")
+
+    def _require_auth(self, params=None):
+        if not self._authorized(params):
+            raise UserError("Senha de acesso necessária.", 401)
+
+    def _start_transcription(self, body):
+        language = body.get("language") or None
+        if body.get("upload_id"):
+            job = tr.create_job({"upload_id": str(body["upload_id"])}, language)
+        elif body.get("url"):
+            url = validate_url(body.get("url"))
+
+            def resolver():
+                try:
+                    info = extract_info(url)
+                except UserError as exc:
+                    raise tr.TranscribeError(str(exc))
+                if not info.get("stream_url"):
+                    raise tr.TranscribeError("O YouTube não entregou o áudio deste vídeo.")
+                return info["stream_url"], info.get("headers") or {}, info.get("title") or "vídeo"
+
+            job = tr.create_job({"url": url, "resolver": resolver}, language)
+        else:
+            raise UserError("Escolha um arquivo ou cole um link do YouTube.")
+        return self._json(200, {"ok": True, "job": job})
 
     def do_DELETE(self):
         path = urllib.parse.urlparse(self.path).path

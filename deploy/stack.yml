@@ -11,6 +11,7 @@ services:
       - MAX_CLIP_SECONDS=${TRECHO_MAXIMO_SEGUNDOS:-3600}
       - MAX_CONCURRENT=${DOWNLOADS_SIMULTANEOS:-3}
       - YTDLP_AUTO_UPDATE=true
+      - UPLOAD_MAX_MB=${UPLOAD_MAXIMO_MB:-4096}
       - TZ=America/Sao_Paulo
     volumes:
       - dados:/data
@@ -24,8 +25,8 @@ services:
         delay: 10s
       resources:
         limits:
-          cpus: "1"
-          memory: 1024M
+          cpus: "${LIMITE_CPU:-2}"
+          memory: ${LIMITE_MEMORIA:-3072M}
       labels:
         - traefik.enable=true
         - traefik.docker.network=${REDE_TRAEFIK:-Wtatechor3Net}

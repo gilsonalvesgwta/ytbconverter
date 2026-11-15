@@ -84,15 +84,50 @@
   .modal .card{width:100%;max-width:380px}
   @media(max-width:600px){.row{flex-direction:column}.grid{grid-template-columns:1fr}.btn{justify-content:center}
     .preview img{width:96px;height:54px}}
+
+  .tabs{display:flex;gap:6px;margin-bottom:14px;background:var(--navy-2);border:1px solid var(--line);border-radius:12px;padding:5px}
+  .tab{flex:1;background:transparent;color:var(--muted);padding:10px 12px;font-weight:600;border-radius:8px;display:flex;
+    align-items:center;justify-content:center;gap:8px}
+  .tab:hover{color:var(--text)} .tab.on{background:var(--orange);color:#fff}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:26px 16px;text-align:center;cursor:pointer;
+    background:#061a30;transition:border-color .15s,background .15s}
+  .drop:hover,.drop.over{border-color:var(--orange);background:rgba(255,102,0,.05)}
+  .drop .big{font-weight:600;font-size:15px} .drop .small{color:var(--muted);font-size:12.5px;margin-top:5px}
+  .drop.has{border-style:solid;border-color:var(--orange)}
+  .or{display:flex;align-items:center;gap:10px;color:#5f7898;font-size:12px;margin:14px 0}
+  .or:before,.or:after{content:"";flex:1;height:1px;background:var(--line)}
+  .bar{height:8px;background:#061a30;border:1px solid var(--line);border-radius:99px;overflow:hidden;margin-top:10px}
+  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--orange),var(--orange-2));transition:width .4s}
+  .result{margin-top:18px;display:none}
+  .result.show{display:block}
+  .result-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .result-head .meta{color:var(--muted);font-size:13px}
+  textarea{width:100%;min-height:260px;resize:vertical;background:#061a30;border:1px solid var(--line);color:var(--text);
+    border-radius:10px;padding:14px;font:15px/1.6 inherit;font-family:inherit;outline:none}
+  .btn.copied{background:var(--ok)}
+  .radio{display:flex;gap:10px;flex-wrap:wrap}
+  .radio label{flex:1;min-width:200px;display:flex;gap:9px;align-items:flex-start;background:#061a30;border:1px solid var(--line);
+    border-radius:10px;padding:11px 12px;cursor:pointer;color:var(--text);font-size:14px;margin:0}
+  .radio input{accent-color:var(--orange);margin-top:3px}
+  .radio small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+  .radio label:has(input:checked){border-color:var(--orange)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
-    <div><h1>YTB <span>Conversor</span></h1><div class="sub">Baixe trechos de áudio de vídeos do YouTube</div></div>
+    <div><h1>YTB <span>Conversor</span></h1><div class="sub">Trechos de áudio do YouTube e transcrição de vídeos e áudios</div></div>
   </header>
 
+  <nav class="tabs" role="tablist">
+    <button class="tab on" data-tab="clip" type="button" role="tab">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Baixar trecho</button>
+    <button class="tab" data-tab="tr" type="button" role="tab">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>Transcrever</button>
+  </nav>
+
+  <section id="tab-clip">
   <main class="card">
     <form id="form" autocomplete="off">
       <div class="row">
@@ -145,6 +180,70 @@
 
   <h3 id="hist-title" hidden>Baixados nesta sessão</h3>
   <ul class="hist" id="hist"></ul>
+  </section>
+
+  <section id="tab-tr" hidden>
+  <div class="card">
+    <form id="tr-form" autocomplete="off">
+      <input type="file" id="tr-file" accept="audio/*,video/*,.mp3,.wav,.m4a,.mp4,.mov,.mkv,.webm,.ogg,.opus,.flac,.aac,.wma,.avi" hidden>
+      <div class="drop" id="tr-drop" tabindex="0">
+        <div class="big" id="tr-drop-title">Clique para escolher um vídeo ou áudio</div>
+        <div class="small" id="tr-drop-sub">ou arraste o arquivo para cá · MP4, MOV, MKV, MP3, WAV, M4A, OGG… até 4 GB</div>
+      </div>
+      <div class="or">ou</div>
+      <input id="tr-url" type="url" placeholder="Cole um link do YouTube para transcrever o vídeo inteiro">
+      <div class="row" style="margin-top:14px;align-items:flex-end">
+        <div style="flex:1"><label for="tr-lang">Idioma do áudio</label><select id="tr-lang"></select></div>
+        <button class="btn" id="tr-go" type="submit" style="height:46px">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+          <span>Transcrever</span></button>
+      </div>
+      <div class="summary" id="tr-summary"></div>
+      <div class="status" id="tr-status"></div>
+      <div class="bar" id="tr-bar" hidden><i></i></div>
+
+      <div class="result" id="tr-result">
+        <div class="result-head">
+          <div class="meta" id="tr-meta"></div>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="ghost" id="tr-txt">Baixar .txt</button>
+            <button type="button" class="btn" id="tr-copy" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>Copiar transcrição</span></button>
+          </div>
+        </div>
+        <textarea id="tr-text" readonly></textarea>
+      </div>
+
+      <details id="tr-settings">
+        <summary><span class="arr">▶</span> Configurações da transcrição</summary>
+        <div style="margin-top:16px">
+          <label>Motor de transcrição</label>
+          <div class="radio">
+            <label><input type="radio" name="tr-engine" value="local"><span><b>Gratuito</b> — no próprio servidor<small>Sem custo e sem chave. Velocidade depende do servidor.</small></span></label>
+            <label><input type="radio" name="tr-engine" value="openai"><span><b>OpenAI</b> — pago, mais rápido<small>Usa sua chave da API. Cerca de US$ 0,18 por hora de áudio.</small></span></label>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="full" id="tr-local-box"><label for="tr-local-model">Modelo gratuito</label><select id="tr-local-model"></select>
+            <div class="hint">Na primeira vez com cada modelo, o servidor baixa o modelo (alguns minutos). Depois fica salvo.</div></div>
+          <div class="full" id="tr-openai-box">
+            <label for="tr-key">Chave da API da OpenAI</label>
+            <input id="tr-key" type="password" placeholder="sk-..." autocomplete="off">
+            <div class="hint" id="tr-key-hint">Crie em platform.openai.com/api-keys. Fica salva só no servidor.</div>
+            <label for="tr-openai-model" style="margin-top:12px">Modelo da OpenAI</label><select id="tr-openai-model"></select>
+          </div>
+          <div class="full"><label for="tr-default-lang">Idioma padrão</label><select id="tr-default-lang"></select></div>
+        </div>
+        <div class="actions">
+          <button type="button" class="ghost" id="tr-clear-key" hidden>Apagar chave salva</button>
+          <button type="button" class="btn" id="tr-save" style="margin-left:auto">Salvar configurações</button>
+        </div>
+        <div class="status" id="tr-set-status"></div>
+      </details>
+    </form>
+  </div>
+  </section>
 
   <footer>WTA Tech · YTB Conversor <span id="ver"></span><a href="#" id="logout" style="color:#58708f" hidden> · sair</a></footer>
 </div>
@@ -398,7 +497,230 @@
   $("ck-del").addEventListener("click", deleteCookies);
   $("login-form").addEventListener("submit", doLogin);
   $("logout").addEventListener("click", (e) => { e.preventDefault(); ls.del(LS_KEY); showLogin(); });
+  window.YTBC = { api, showLogin, getConfig: () => config };
   init();
+})();
+</script>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const fmtSize = (b) => b >= 1073741824 ? (b/1073741824).toFixed(2) + " GB" : b > 1048576 ? (b/1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b/1024)) + " KB";
+  const fmtDur = (s) => { s = Math.round(s || 0); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+    return (h ? h + "h" + String(m).padStart(2,"0") + "min" : m + "min" + String(x).padStart(2,"0") + "s"); };
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const LS_JOB = "ytbc.lastJob";
+  const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+               set(k,v){ try { localStorage.setItem(k,v); } catch {} }, del(k){ try { localStorage.removeItem(k); } catch {} } };
+  let file = null, settings = null, loaded = false, busy = false, lastName = "transcricao";
+
+  function setStatus(kind, html, el = $("tr-status")) { el.className = "status " + (kind || ""); el.innerHTML = html || ""; }
+  function bar(p) { $("tr-bar").hidden = p == null; if (p != null) $("tr-bar").firstElementChild.style.width = Math.max(2, Math.min(100, p)) + "%"; }
+  const api = (...a) => window.YTBC.api(...a);
+  const authHeaders = () => { try { const k = localStorage.getItem("ytbc.key"); return k ? { "X-Access-Key": k } : {}; } catch { return {}; } };
+
+  // ---------- abas
+  document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === t));
+    $("tab-clip").hidden = t.dataset.tab !== "clip";
+    $("tab-tr").hidden = t.dataset.tab !== "tr";
+    try { history.replaceState(null, "", t.dataset.tab === "tr" ? "#transcrever" : location.pathname + location.search); } catch {}
+    if (t.dataset.tab === "tr") loadSettings();
+  }));
+
+  // ---------- configurações
+  const opt = (list, sel) => list.map(([v, l]) => `<option value="${esc(v)}"${v === sel ? " selected" : ""}>${esc(l)}</option>`).join("");
+  async function loadSettings(force) {
+    if (loaded && !force) return;
+    try {
+      const res = await api("/api/transcribe/settings");
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error);
+      settings = d; loaded = true; renderSettings();
+    } catch (e) { setStatus("err", esc(e.message || "Não consegui carregar as configurações.")); }
+  }
+  function renderSettings() {
+    const o = settings.options;
+    $("tr-lang").innerHTML = opt(o.languages, settings.language);
+    $("tr-default-lang").innerHTML = opt(o.languages, settings.language);
+    $("tr-local-model").innerHTML = opt(o.local_models, settings.local_model);
+    $("tr-openai-model").innerHTML = opt(o.openai_models, settings.openai_model);
+    document.querySelectorAll('input[name="tr-engine"]').forEach(r => r.checked = r.value === settings.engine);
+    $("tr-key").value = "";
+    $("tr-key").placeholder = settings.openai_key_set ? "Chave salva (" + settings.openai_key_hint + ") — digite outra para trocar" : "sk-...";
+    $("tr-clear-key").hidden = !settings.openai_key_set;
+    const cfg = window.YTBC.getConfig();
+    if (!cfg.auth_required) $("tr-key-hint").textContent = "Para salvar a chave, defina a variável SENHA_ACESSO na stack (protege sua chave).";
+    toggleEngine(); renderSummary();
+  }
+  function engineSel() { const r = document.querySelector('input[name="tr-engine"]:checked'); return r ? r.value : "local"; }
+  function toggleEngine() {
+    const e = engineSel();
+    $("tr-local-box").hidden = e !== "local"; $("tr-openai-box").hidden = e !== "openai";
+  }
+  function renderSummary() {
+    if (!settings) return;
+    const local = settings.engine === "local";
+    const model = (local ? settings.options.local_models : settings.options.openai_models).find(m => m[0] === (local ? settings.local_model : settings.openai_model));
+    $("tr-summary").innerHTML = `<span class="chip">Motor <b>${local ? "Gratuito" : "OpenAI"}</b></span>` +
+      `<span class="chip">Modelo <b>${esc(model ? model[1].split(" — ")[0] : "")}</b></span>`;
+  }
+  async function saveSettings(extra = {}) {
+    const body = { engine: engineSel(), local_model: $("tr-local-model").value, openai_model: $("tr-openai-model").value,
+                   language: $("tr-default-lang").value, ...extra };
+    const key = $("tr-key").value.trim(); if (key) body.openai_key = key;
+    try {
+      const res = await api("/api/transcribe/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error);
+      settings = d; renderSettings(); setStatus("ok", "Configurações salvas.", $("tr-set-status"));
+      setTimeout(() => setStatus("", "", $("tr-set-status")), 3000);
+    } catch (e) { setStatus("err", esc(e.message), $("tr-set-status")); }
+  }
+
+  // ---------- arquivo
+  function pick(f) {
+    if (!f) return;
+    file = f; $("tr-url").value = "";
+    $("tr-drop").classList.add("has");
+    $("tr-drop-title").textContent = "📎 " + f.name;
+    $("tr-drop-sub").textContent = fmtSize(f.size) + " · clique para trocar";
+  }
+  $("tr-drop").addEventListener("click", () => $("tr-file").click());
+  $("tr-drop").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("tr-file").click(); } });
+  $("tr-file").addEventListener("change", () => pick($("tr-file").files[0]));
+  ["dragenter","dragover"].forEach(ev => $("tr-drop").addEventListener(ev, e => { e.preventDefault(); $("tr-drop").classList.add("over"); }));
+  ["dragleave","drop"].forEach(ev => $("tr-drop").addEventListener(ev, e => { e.preventDefault(); $("tr-drop").classList.remove("over"); }));
+  $("tr-drop").addEventListener("drop", e => pick(e.dataTransfer.files[0]));
+  $("tr-url").addEventListener("input", () => { if ($("tr-url").value.trim() && file) { file = null; $("tr-file").value = "";
+    $("tr-drop").classList.remove("has"); $("tr-drop-title").textContent = "Clique para escolher um vídeo ou áudio";
+    $("tr-drop-sub").textContent = "ou arraste o arquivo para cá · MP4, MOV, MKV, MP3, WAV, M4A, OGG… até 4 GB"; } });
+
+  function putChunk(id, offset, blob, onProg) {
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open("PUT", `/api/upload/${id}?offset=${offset}`);
+      const h = authHeaders(); Object.keys(h).forEach(k => x.setRequestHeader(k, h[k]));
+      x.upload.onprogress = (e) => e.lengthComputable && onProg(e.loaded);
+      x.onload = () => { let d = {}; try { d = JSON.parse(x.responseText); } catch {}
+        if (x.status === 200 && d.ok) resolve(d); else { const err = new Error(d.error || "Falha no envio (" + x.status + ")"); err.fatal = x.status >= 400 && x.status < 500 && x.status !== 408 && x.status !== 429; reject(err); } };
+      x.onerror = () => reject(new Error("Conexão interrompida durante o envio."));
+      x.send(blob);
+    });
+  }
+  async function upload(f) {
+    const res = await api("/api/upload/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: f.name, size: f.size }) });
+    const init = await res.json();
+    if (!init.ok) throw new Error(init.error);
+    const CH = init.chunk_size || 50 * 1024 * 1024;
+    let off = 0; const t0 = Date.now();
+    while (off < f.size) {
+      const blob = f.slice(off, off + CH);
+      for (let tries = 1; ; tries++) {
+        try {
+          await putChunk(init.upload_id, off, blob, (loaded) => {
+            const done = off + loaded, pct = done / f.size * 100, secs = (Date.now() - t0) / 1000;
+            setStatus("info", `<span class="spin"></span>&nbsp; Enviando o arquivo… ${pct.toFixed(0)}% (${fmtSize(done)} de ${fmtSize(f.size)}${secs > 3 ? ", " + fmtSize(done / secs) + "/s" : ""})`);
+            bar(pct * 0.25);
+          });
+          break;
+        } catch (e) { if (e.fatal || tries >= 4) throw e; setStatus("info", "Conexão instável, tentando de novo…"); await sleep(2000 * tries); }
+      }
+      off += blob.size;
+    }
+    return init.upload_id;
+  }
+
+  // ---------- transcrição
+  async function start(ev) {
+    ev.preventDefault();
+    if (busy) return;
+    const url = $("tr-url").value.trim();
+    if (!file && !url) { setStatus("err", "Escolha um arquivo ou cole um link do YouTube."); return; }
+    busy = true; $("tr-go").disabled = true;
+    $("tr-result").classList.remove("show"); $("tr-copy").disabled = true;
+    try {
+      const body = { language: $("tr-lang").value };
+      if (file) { body.upload_id = await upload(file); lastName = file.name.replace(/\.[^.]+$/, ""); }
+      else { body.url = url; lastName = "transcricao"; }
+      setStatus("info", `<span class="spin"></span>&nbsp; Iniciando a transcrição…`); bar(25);
+      const res = await api("/api/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error);
+      ls.set(LS_JOB, JSON.stringify({ id: d.job.id, name: lastName }));
+      await poll(d.job.id);
+    } catch (e) { setStatus("err", esc(e.message || "Erro inesperado.")); bar(null); }
+    finally { busy = false; $("tr-go").disabled = false; }
+  }
+
+  async function poll(id) {
+    const t0 = Date.now(); let fails = 0;
+    for (;;) {
+      let job;
+      try {
+        const res = await api("/api/jobs/" + id);
+        const d = await res.json();
+        if (!d.ok) { if (res.status === 404) ls.del(LS_JOB); throw Object.assign(new Error(d.error), { fatal: true }); }
+        job = d.job; fails = 0;
+      } catch (e) { if (e.fatal || ++fails > 20) throw e; await sleep(3000); continue; }
+      const el = Math.round((Date.now() - t0) / 1000);
+      if (job.status === "done") { showResult(job); return; }
+      if (job.status === "error") { ls.del(LS_JOB); throw new Error(job.error); }
+      const extra = job.status === "queued" ? ` (posição ${job.position} na fila)` : job.progress ? ` ${job.progress}%` : "";
+      setStatus("info", `<span class="spin"></span>&nbsp; ${esc(job.stage)}${extra}${job.duration ? " · áudio de " + fmtDur(job.duration) : ""} · ${el}s`);
+      bar(25 + (job.progress || 0) * 0.75);
+      await sleep(1500);
+    }
+  }
+
+  function showResult(job) {
+    bar(null);
+    const text = job.text || "";
+    $("tr-text").value = text;
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    const took = job.finished && job.started ? Math.round(job.finished - job.started) : 0;
+    $("tr-meta").textContent = `${job.name} · ${fmtDur(job.duration)} de áudio · ${words.toLocaleString("pt-BR")} palavras${took ? " · feito em " + fmtDur(took) : ""}`;
+    $("tr-result").classList.add("show"); $("tr-copy").disabled = !text;
+    setStatus("ok", "✔ Transcrição concluída. Clique em <b>Copiar transcrição</b> para copiar todo o texto.");
+  }
+
+  async function copyText() {
+    const text = $("tr-text").value;
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; }
+    catch { const t = $("tr-text"); t.focus(); t.select(); try { ok = document.execCommand("copy"); } catch {} t.setSelectionRange(0, 0); t.blur(); }
+    const b = $("tr-copy"), label = b.querySelector("span");
+    label.textContent = ok ? "Copiado!" : "Não consegui copiar";
+    b.classList.toggle("copied", ok);
+    setTimeout(() => { label.textContent = "Copiar transcrição"; b.classList.remove("copied"); }, 2200);
+  }
+  function downloadTxt() {
+    const blob = new Blob([$("tr-text").value], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = lastName + ".txt";
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  }
+
+  $("tr-form").addEventListener("submit", start);
+  $("tr-copy").addEventListener("click", copyText);
+  $("tr-txt").addEventListener("click", downloadTxt);
+  document.querySelectorAll('input[name="tr-engine"]').forEach(r => r.addEventListener("change", toggleEngine));
+  $("tr-save").addEventListener("click", () => saveSettings());
+  $("tr-clear-key").addEventListener("click", () => { if (engineSel() === "openai") document.querySelector('input[name="tr-engine"][value="local"]').checked = true; saveSettings({ clear_openai_key: true }); });
+
+  // retoma a última transcrição (ex.: página recarregada no meio)
+  if (location.hash === "#transcrever") document.querySelector('.tab[data-tab="tr"]').click();
+  try {
+    const last = JSON.parse(ls.get(LS_JOB) || "null");
+    if (last && last.id) {
+      lastName = last.name || lastName;
+      setTimeout(async () => {
+        try { busy = true; $("tr-go").disabled = true; await poll(last.id); }
+        catch (e) { setStatus("", ""); bar(null); }
+        finally { busy = false; $("tr-go").disabled = false; }
+      }, 600);
+    }
+  } catch {}
 })();
 </script>
 </body>
