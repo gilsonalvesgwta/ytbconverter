@@ -625,7 +625,7 @@ def _local(job, pcm, settings):
     skip = bool(settings.get("skip_silence"))
     lang = None if job["language"] == "auto" else job["language"]
     beam = int(os.environ.get("WHISPER_BEAM", "1"))
-    text, last_end, prompt = "", None, None
+    text, last_end = "", None
     _set(job, stage="Transcrevendo")
     for start, block in pcm.blocks(FIRST_BLOCK_SECONDS, LOCAL_BLOCK_SECONDS):
         audio = block.astype(np.float32) / 32768.0
@@ -634,7 +634,7 @@ def _local(job, pcm, settings):
             # sem isto o Whisper descarta janelas de 30 s que "parecem" não ter fala
             # (canto, fala com música de fundo) e a transcrição sai cortada
             no_speech_threshold=0.6 if skip else None,
-            condition_on_previous_text=False, initial_prompt=prompt)
+            condition_on_previous_text=False)
         for seg in segments:
             t = seg.text.strip()
             if MUSIC_ONLY.fullmatch(t):
@@ -648,7 +648,6 @@ def _local(job, pcm, settings):
                 _set(job, text=text)
             _progress(job, start + seg.end)
         _progress(job, start + len(block) / SR)
-        prompt = text[-200:] or None
     return text
 
 
