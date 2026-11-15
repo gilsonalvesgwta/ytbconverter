@@ -91,6 +91,12 @@ jobs:
             exit 1
           fi
 
+      - name: Transcrição pronta do YouTube (informativo)
+        continue-on-error: true
+        run: |
+          curl -s -X POST localhost:8080/api/youtube/transcript -H 'Content-Type: application/json' \
+            -H 'X-Access-Key: ci-senha-123' -d '{"url":"https://www.youtube.com/watch?v=DBElv4gvD7A"}' | head -c 600; echo
+
       - name: Publicar imagem (amd64 + arm64)
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6

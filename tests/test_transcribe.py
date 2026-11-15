@@ -428,6 +428,104 @@ class TestYouTubeFastDownload(base.Base):
         self.assertEqual(job["text"], "[60s] [60s] [30s]")
 
 
+class FakeCaptions(http.server.BaseHTTPRequestHandler):
+    files = {}
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        body = FakeCaptions.files.get(self.path.split("?")[0])
+        if body is None:
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class TestYouTubeCaptions(base.Base):
+    """Copiar a transcrição que o YouTube já tem (sem baixar nem transcrever áudio)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeCaptions)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        b = f"http://127.0.0.1:{cls.srv.server_address[1]}"
+        j = lambda events: json.dumps({"events": events}).encode()
+        ev = lambda t0, d, txt: {"tStartMs": t0, "dDurationMs": d, "segs": [{"utf8": x} for x in txt]}
+        F = FakeCaptions.files
+        F["/pt-manual.json3"] = j([ev(0, 2000, ["Olá", " pessoal"]), {"tStartMs": 2000, "dDurationMs": 10, "aAppend": 1, "segs": [{"utf8": "\n"}]},
+                                   ev(2100, 1500, ["tudo bem?"]), ev(9000, 2000, ["novo assunto"]), ev(65000, 1000, ["fim"])])
+        F["/pt-auto.json3"] = j([ev(0, 1000, ["automática errada"])])
+        F["/en-orig.json3"] = j([ev(0, 1500, ["hello", " everyone"]), ev(1600, 1000, ["welcome"])])
+        F["/pt-trad.json3"] = j([ev(0, 1500, ["olá a todos"]), ev(1600, 1000, ["bem-vindos"])])
+        F["/rolante.vtt"] = (b"WEBVTT\nKind: captions\n\n00:00:00.000 --> 00:00:02.000\nhello<00:00:00.500><c> world</c>\n\n"
+                             b"00:00:02.000 --> 00:00:02.010\nhello world\n\n"
+                             b"00:00:02.010 --> 00:00:04.000\nhello world\nthis is<00:00:02.500><c> a &amp; test</c>\n")
+        tr = lambda path, ext="json3": [{"ext": ext, "url": b + path}]
+        infos = {
+            "manual": {"title": "Vídeo com legenda", "language": "pt", "duration": 70,
+                       "subtitles": {"pt-BR": tr("/pt-manual.json3"), "live_chat": tr("/x")},
+                       "automatic_captions": {"pt-orig": tr("/pt-auto.json3"), "pt": tr("/pt-auto.json3")}},
+            "auto": {"title": "Only auto", "language": "en", "duration": 3, "subtitles": {},
+                     "automatic_captions": {"en-orig": tr("/en-orig.json3"), "en": tr("/en-orig.json3"), "pt": tr("/pt-trad.json3")}},
+            "vtt": {"title": "VTT", "language": "", "duration": 4, "subtitles": {},
+                    "automatic_captions": {"en-orig": tr("/rolante.vtt", "vtt")}},
+            "nada": {"title": "Sem legenda", "language": "pt", "duration": 10, "subtitles": {}, "automatic_captions": {}},
+        }
+        for k, v in infos.items():
+            F[f"/{k}.info.json"] = json.dumps({"id": k, "thumbnail": "", "uploader": "", "stream_url": "", "headers": {}, **v}).encode()
+        cls.url = lambda self, k: f"{b}/{k}.info.json"
+        cls.env = {"ACCESS_PASSWORD": PASSWORD}
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        cls.srv.shutdown()
+
+    def get(self, k, lang="orig", ts=False):
+        st, _, body = base.request(self.base, "/api/youtube/transcript", {"url": self.url(k), "lang": lang, "timestamps": ts}, headers=AUTH)
+        return st, json.loads(body)
+
+    def test_manual_caption_preferred(self):
+        st, d = self.get("manual")
+        self.assertEqual(st, 200, d)
+        self.assertEqual((d["kind"], d["language"]), ("manual", "pt-BR"))
+        self.assertEqual(d["text"], "Olá pessoal tudo bem?\n\nnovo assunto\n\nfim")
+        self.assertEqual(d["title"], "Vídeo com legenda")
+
+    def test_timestamps(self):
+        st, d = self.get("manual", ts=True)
+        self.assertEqual(d["text"], "[00:00] Olá pessoal\n[00:02] tudo bem?\n[00:09] novo assunto\n[01:05] fim")
+
+    def test_auto_and_translation(self):
+        st, d = self.get("auto")
+        self.assertEqual((st, d["kind"], d["language"], d["text"]), (200, "auto", "en", "hello everyone welcome"))
+        st, d = self.get("auto", "pt")
+        self.assertEqual((st, d["kind"], d["text"]), (200, "traduzida", "olá a todos bem-vindos"))
+        st, d = self.get("auto", "es")
+        self.assertEqual(st, 404)
+        self.assertIn("Idioma original", d["error"])
+
+    def test_vtt_rolling_no_duplicates(self):
+        st, d = self.get("vtt")
+        self.assertEqual((st, d["text"]), (200, "hello world this is a & test"))
+
+    def test_no_captions(self):
+        st, d = self.get("nada")
+        self.assertEqual(st, 404)
+        self.assertIn("não tem transcrição", d["error"])
+
+    def test_auth_and_validation(self):
+        self.assertEqual(base.request(self.base, "/api/youtube/transcript", {"url": self.url("manual")})[0], 401)
+        self.assertEqual(base.request(self.base, "/api/youtube/transcript", {"url": "https://exemplo.com/x"}, headers=AUTH)[0], 400)
+        self.assertEqual(base.request(self.base, "/api/youtube/transcript", {"url": self.url("manual"), "lang": "xx"}, headers=AUTH)[0], 400)
+
+
 class TestNoStorageLeft(base.Base):
     """Sobras de execuções anteriores são apagadas ao iniciar; envios abandonados somem sozinhos."""
 

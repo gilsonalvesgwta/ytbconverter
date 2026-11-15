@@ -182,6 +182,11 @@ def extract_info(url):
         for k in [k for k, v in _info_cache.items() if now - v["_t"] >= INFO_TTL]:
             del _info_cache[k]
 
+    if ALLOW_LOCAL_TEST and url.startswith("http://127.0.0.1") and url.endswith(".info.json"):
+        with urllib.request.urlopen(url, timeout=10) as res:
+            info = json.loads(res.read().decode("utf-8"))
+        info["_t"] = now
+        return info
     if ALLOW_LOCAL_TEST and url.startswith("http://127.0.0.1"):
         out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
                               "default=nw=1:nk=1", url], capture_output=True, text=True)
@@ -228,12 +233,170 @@ def extract_info(url):
         info = {"id": raw.get("id"), "title": raw.get("title") or "audio",
                 "duration": float(raw.get("duration") or 0), "thumbnail": raw.get("thumbnail") or "",
                 "uploader": raw.get("uploader") or raw.get("channel") or "",
-                "stream_url": stream, "headers": headers, "webpage_url": raw.get("webpage_url") or url}
+                "stream_url": stream, "headers": headers, "webpage_url": raw.get("webpage_url") or url,
+                "language": raw.get("language") or "", "subtitles": raw.get("subtitles") or {},
+                "automatic_captions": raw.get("automatic_captions") or {}}
 
     info["_t"] = now
     with _info_lock:
         _info_cache[url] = info
     return info
+
+
+# ---------------------------------------------------------------- transcrição pronta do YouTube
+CAPTION_LANGS = [("orig", "Idioma original do vídeo"), ("pt", "Português (tradução do YouTube se precisar)"),
+                 ("en", "Inglês"), ("es", "Espanhol")]
+
+
+def _base_lang(code):
+    return (code or "").split("-")[0].lower()
+
+
+def pick_caption_track(info, want="orig"):
+    """Escolhe a legenda: a do dono do vídeo primeiro; senão a automática do YouTube.
+    Devolve (tracks, código, tipo) ou None."""
+    subs = {k: v for k, v in (info.get("subtitles") or {}).items() if v and not k.startswith("live_chat")}
+    auto = {k: v for k, v in (info.get("automatic_captions") or {}).items() if v}
+    orig_lang = _base_lang(info.get("language"))
+    auto_orig = [k for k in auto if k.endswith("-orig")]
+    if not orig_lang and auto_orig:
+        orig_lang = _base_lang(auto_orig[0])
+
+    def find(d, lang):
+        if lang in d:
+            return lang
+        return next((k for k in d if _base_lang(k) == lang and not k.endswith("-orig")), None)
+
+    if want == "orig":
+        if orig_lang and find(subs, orig_lang):
+            k = find(subs, orig_lang)
+            return subs[k], k, "manual"
+        if subs and not orig_lang:
+            k = next(iter(subs))
+            return subs[k], k, "manual"
+        if orig_lang and f"{orig_lang}-orig" in auto:
+            return auto[f"{orig_lang}-orig"], orig_lang, "auto"
+        if auto_orig:
+            return auto[auto_orig[0]], _base_lang(auto_orig[0]), "auto"
+        if orig_lang and find(auto, orig_lang):
+            k = find(auto, orig_lang)
+            return auto[k], k, "auto"
+        if subs:
+            k = next(iter(subs))
+            return subs[k], k, "manual"
+        return None
+    k = find(subs, want)
+    if k:
+        return subs[k], k, "manual"
+    if orig_lang == want and f"{want}-orig" in auto:
+        return auto[f"{want}-orig"], want, "auto"
+    k = find(auto, want)
+    if k:
+        return auto[k], k, "auto" if orig_lang == want else "traduzida"
+    return None
+
+
+def _fmt_ts(sec):
+    sec = int(sec)
+    h, m, s = sec // 3600, sec % 3600 // 60, sec % 60
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+
+def parse_json3(data):
+    lines = []
+    for ev in data.get("events") or []:
+        segs = ev.get("segs")
+        if not segs:
+            continue
+        t = re.sub(r"\s+", " ", "".join(sg.get("utf8", "") for sg in segs)).strip()
+        if t:
+            lines.append((ev.get("tStartMs", 0) / 1000, (ev.get("tStartMs", 0) + ev.get("dDurationMs", 0)) / 1000, t))
+    return lines
+
+
+def _vtt_time(t):
+    parts = t.replace(",", ".").split(":")
+    sec = 0.0
+    for p_ in parts:
+        sec = sec * 60 + float(p_)
+    return sec
+
+
+def parse_vtt(text):
+    """VTT (inclui o formato "rolante" das legendas automáticas, sem repetir linhas)."""
+    lines, last = [], ""
+    for block in re.split(r"\n\s*\n", text.replace("\r", "")):
+        m = re.search(r"([\d:.,]+)\s*-->\s*([\d:.,]+)", block)
+        if not m:
+            continue
+        body = block[m.end():].split("\n", 1)[1] if "\n" in block[m.end():] else ""
+        for raw in body.split("\n"):
+            t = re.sub(r"<[^>]+>", "", raw)
+            t = re.sub(r"\s+", " ", html_unescape(t)).strip()
+            if not t or t == last:
+                continue
+            if last and t.startswith(last):
+                t = t[len(last):].strip()
+                if not t:
+                    continue
+            lines.append((_vtt_time(m.group(1)), _vtt_time(m.group(2)), t))
+            last = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", raw)).strip()
+    return lines
+
+
+def html_unescape(t):
+    import html
+    return html.unescape(t)
+
+
+def format_caption_text(lines, timestamps):
+    if timestamps:
+        return "\n".join(f"[{_fmt_ts(a)}] {t}" for a, _b, t in lines)
+    out, prev_end = "", None
+    for a, b, t in lines:
+        if out:
+            out += "\n\n" if prev_end is not None and a - prev_end > 3.0 else " "
+        out += t
+        prev_end = max(prev_end or 0, b)
+    return out
+
+
+def fetch_youtube_transcript(url, want="orig", timestamps=False):
+    info = extract_info(url)
+    choice = pick_caption_track(info, want)
+    if not choice:
+        if want != "orig" and pick_caption_track(info, "orig"):
+            raise UserError("Este vídeo não tem legenda nesse idioma. Escolha \"Idioma original do vídeo\".", 404)
+        raise UserError("Este vídeo não tem transcrição disponível no YouTube.", 404)
+    tracks, lang, kind = choice
+    by_ext = {t.get("ext"): t for t in tracks if t.get("url")}
+    track = by_ext.get("json3") or by_ext.get("vtt") or by_ext.get("srv3") or next(iter(by_ext.values()), None)
+    if not track:
+        raise UserError("Não consegui acessar a transcrição deste vídeo.", 502)
+    req_url = track["url"]
+    ext = track.get("ext")
+    if ext not in ("json3", "vtt"):
+        req_url = re.sub(r"([?&])fmt=[^&]*", r"\1fmt=json3", req_url)
+        if "fmt=" not in req_url:
+            req_url += ("&" if "?" in req_url else "?") + "fmt=json3"
+        ext = "json3"
+    headers = dict(track.get("http_headers") or info.get("headers") or {})
+    req = urllib.request.Request(req_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res:
+            raw = res.read().decode("utf-8", "replace")
+    except Exception as exc:  # noqa
+        log.warning("falha ao baixar legenda: %s", exc)
+        raise UserError("O YouTube não entregou a transcrição agora. Tente de novo em instantes.", 502)
+    try:
+        lines = parse_json3(json.loads(raw)) if ext == "json3" else parse_vtt(raw)
+    except ValueError:
+        lines = parse_vtt(raw)
+    if not lines:
+        raise UserError("A transcrição deste vídeo veio vazia.", 404)
+    text = format_caption_text(lines, timestamps)
+    return {"title": info.get("title") or "", "language": lang, "kind": kind, "text": text,
+            "duration": info.get("duration") or 0, "lines": len(lines)}
 
 
 def parse_options(params):
@@ -488,6 +651,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not job:
                     raise UserError("Transcrição não encontrada.", 404)
                 return self._json(200, {"ok": True, "job": job})
+            if path == "/api/youtube/transcript":
+                self._require_auth()
+                b = self._json_body()
+                want = b.get("lang") or "orig"
+                if want not in [c for c, _ in CAPTION_LANGS]:
+                    raise UserError("Idioma inválido.")
+                out = fetch_youtube_transcript(validate_url(b.get("url")), want, bool(b.get("timestamps")))
+                return self._json(200, {"ok": True, **out})
             if path == "/api/transcribe/start":
                 # envio + transcrição juntos: começa a transcrever enquanto o áudio chega
                 self._require_auth()

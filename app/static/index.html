@@ -195,11 +195,17 @@
       <div class="or">ou</div>
       <input id="tr-url" type="url" placeholder="Cole um link do YouTube para transcrever o vídeo inteiro">
       <div class="row" style="margin-top:14px;align-items:flex-end">
-        <div style="flex:1"><label for="tr-lang">Idioma do áudio</label><select id="tr-lang"></select></div>
+        <div style="flex:1" id="tr-lang-box"><label for="tr-lang">Idioma do áudio</label><select id="tr-lang"></select></div>
+        <div style="flex:1" id="tr-cap-box" hidden><label for="tr-cap-lang">Idioma da transcrição</label>
+          <select id="tr-cap-lang"><option value="orig">Idioma original do vídeo</option><option value="pt">Português (traduz se precisar)</option><option value="en">Inglês</option><option value="es">Espanhol</option></select></div>
         <button class="btn" id="tr-go" type="submit" style="height:46px">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
-          <span>Transcrever</span></button>
+          <span id="tr-go-label">Transcrever</span></button>
         <button class="ghost stop" id="tr-stop" type="button" hidden style="height:46px" title="Parar e manter o texto transcrito até agora">■ Parar</button>
+      </div>
+      <div id="tr-cap-extra" hidden style="margin-top:10px">
+        <label class="check"><input type="checkbox" id="tr-ts"> Incluir marcações de tempo [mm:ss]</label>
+        <div class="hint">Copia a transcrição que o próprio YouTube já tem (legenda do criador ou automática): leva só alguns segundos, de qualquer tamanho de vídeo.</div>
       </div>
       <div class="summary" id="tr-summary"></div>
       <div class="status" id="tr-status"></div>
@@ -589,7 +595,7 @@
   // ---------- arquivo
   function pick(f) {
     if (!f) return;
-    file = f; $("tr-url").value = "";
+    file = f; $("tr-url").value = ""; setTimeout(syncMode, 0);
     $("tr-drop").classList.add("has");
     $("tr-drop-title").textContent = "📎 " + f.name;
     $("tr-drop-sub").textContent = fmtSize(f.size) + " · clique para trocar";
@@ -600,6 +606,16 @@
   ["dragenter","dragover"].forEach(ev => $("tr-drop").addEventListener(ev, e => { e.preventDefault(); $("tr-drop").classList.add("over"); }));
   ["dragleave","drop"].forEach(ev => $("tr-drop").addEventListener(ev, e => { e.preventDefault(); $("tr-drop").classList.remove("over"); }));
   $("tr-drop").addEventListener("drop", e => pick(e.dataTransfer.files[0]));
+  function syncMode() {
+    const link = !!$("tr-url").value.trim() && !file;
+    $("tr-lang-box").hidden = link; $("tr-cap-box").hidden = !link; $("tr-cap-extra").hidden = !link;
+    $("tr-summary").hidden = link;
+    $("tr-go-label").textContent = link ? "Buscar transcrição" : "Transcrever";
+  }
+  $("tr-url").addEventListener("input", syncMode);
+  try { const c = JSON.parse(ls.get("ytbc.cap") || "{}"); if (c.lang) $("tr-cap-lang").value = c.lang; $("tr-ts").checked = !!c.ts; } catch {}
+  const saveCap = () => ls.set("ytbc.cap", JSON.stringify({ lang: $("tr-cap-lang").value, ts: $("tr-ts").checked }));
+  $("tr-cap-lang").addEventListener("change", saveCap); $("tr-ts").addEventListener("change", saveCap);
   let warmTimer = null;
   $("tr-url").addEventListener("input", () => {  // já lê os dados do vídeo enquanto você confere: ao clicar, começa direto
     clearTimeout(warmTimer); const u = $("tr-url").value.trim();
@@ -804,14 +820,38 @@
     }
   }
 
-  async function start(ev) {
-    ev.preventDefault();
+  async function fetchCaptions(url, ctl) {
+    setStatus("info", `<span class="spin"></span>&nbsp; Buscando a transcrição no YouTube…`);
+    const res = await api("/api/youtube/transcript", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, lang: $("tr-cap-lang").value, timestamps: $("tr-ts").checked }) });
+    const d = await res.json();
+    if (!d.ok) {
+      if (res.status === 404) {
+        setStatus("err", esc(d.error) + ` <button type="button" class="ghost" id="tr-audio-fallback" style="margin-left:8px">Transcrever o áudio (mais demorado)</button>`);
+        $("tr-audio-fallback").addEventListener("click", () => start(null, { audio: true }));
+        ctl.cancelled = true;  // não sobrescrever a mensagem
+        return;
+      }
+      throw new Error(d.error);
+    }
+    lastName = (d.title || "transcricao").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 120) || "transcricao";
+    const text = d.text || "";
+    $("tr-text").value = text;
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    const kinds = { manual: "legenda do criador", auto: "legenda automática do YouTube", traduzida: "tradução automática do YouTube" };
+    $("tr-meta").textContent = `${d.title} · ${kinds[d.kind] || "legenda"} (${d.language}) · ${words.toLocaleString("pt-BR")} palavras · em ${((Date.now() - ctl.t0) / 1000).toFixed(1)}s`;
+    $("tr-result").classList.add("show"); $("tr-copy").disabled = !text; bar(null);
+    setStatus("ok", "✔ Transcrição do YouTube pronta. Clique em <b>Copiar transcrição</b> para copiar todo o texto.");
+  }
+
+  async function start(ev, opts = {}) {
+    if (ev) ev.preventDefault();
     if (busy) return;
     const url = $("tr-url").value.trim();
     if (!file && !url) { setStatus("err", "Escolha um arquivo ou cole um link do YouTube."); return; }
     busy = true; $("tr-go").disabled = true; $("tr-stop").hidden = false;
     $("tr-result").classList.remove("show"); $("tr-copy").disabled = true; $("tr-text").value = "";
-    const ctl = { t0: Date.now() };
+    const ctl = { t0: Date.now(), audio: !!opts.audio };
     current = ctl;
     try {
       const language = $("tr-lang").value;
@@ -833,9 +873,12 @@
         const upload = streamUpload(d.upload_id, plan ? audioPieces(file, plan) : filePieces(file), ctl.total, ctl)
           .catch(e => { ctl.stop = true; throw e; });
         await Promise.all([upload, poll(d.job.id, ctl)]);
+      } else if (!ctl.audio) {
+        $("tr-stop").hidden = true;
+        await fetchCaptions(url, ctl);
       } else {
         lastName = "transcricao";
-        setStatus("info", `<span class="spin"></span>&nbsp; Iniciando a transcrição…`); bar(2);
+        setStatus("info", `<span class="spin"></span>&nbsp; Iniciando a transcrição do áudio…`); bar(2);
         const res = await api("/api/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, language }) });
         const d = await res.json();
         if (!d.ok) throw new Error(d.error);
