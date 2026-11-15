@@ -27,6 +27,9 @@ jobs:
         run: python tests/test_e2e.py
       - name: Rodar testes da transcrição (OpenAI simulada + Whisper gratuito com voz real)
         run: python tests/test_transcribe.py
+        env:
+          LOG_SEGMENTS: "1"
+          SHOW_SERVER_LOG: "1"
 
   imagem:
     name: Imagem amd64 + arm64

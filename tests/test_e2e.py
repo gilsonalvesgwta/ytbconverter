@@ -40,7 +40,8 @@ def start_server(extra_env):
     port = free_port()
     env = dict(os.environ, PORT=str(port), ALLOW_LOCAL_TEST="1", DATA_DIR=tempfile.mkdtemp(dir=TMP),
                APP_VERSION="teste", **extra_env)
-    proc = subprocess.Popen([sys.executable, SERVER], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    out = None if os.environ.get("SHOW_SERVER_LOG") else subprocess.PIPE
+    proc = subprocess.Popen([sys.executable, SERVER], env=env, stdout=out, stderr=subprocess.STDOUT)
     base = f"http://127.0.0.1:{port}"
     for _ in range(50):
         try:

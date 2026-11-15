@@ -46,6 +46,7 @@ LOCAL_BLOCK_SECONDS = int(os.environ.get("LOCAL_BLOCK_SECONDS", "120"))
 FIRST_BLOCK_SECONDS = int(os.environ.get("FIRST_BLOCK_SECONDS", "30"))
 STREAM_IDLE_SECONDS = int(os.environ.get("STREAM_IDLE_SECONDS", "600"))  # envio parado no meio
 PRELOAD_MODEL = os.environ.get("PRELOAD_MODEL", "true") == "true"
+LOG_SEGMENTS = os.environ.get("LOG_SEGMENTS", "") == "1"
 MODELS_DIR = os.path.join(DATA_DIR, "models")
 JOB_TTL = 24 * 3600
 UPLOAD_IDLE_SECONDS = int(os.environ.get("UPLOAD_IDLE_SECONDS", "3600"))   # envio abandonado
@@ -637,6 +638,9 @@ def _local(job, pcm, settings):
             condition_on_previous_text=False)
         for seg in segments:
             t = seg.text.strip()
+            if LOG_SEGMENTS:
+                log.info("seg %.1f-%.1f nsp=%.2f lp=%.2f %r", start + seg.start, start + seg.end,
+                         seg.no_speech_prob, seg.avg_logprob, t)
             if MUSIC_ONLY.fullmatch(t):
                 t = ""  # só símbolo de música: não é texto
             if t:
