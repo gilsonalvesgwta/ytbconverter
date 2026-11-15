@@ -15,7 +15,8 @@ frases = ["Bom dia a todos, hoje vamos falar sobre planejamento financeiro.",
           "No final da aula você vai entender como funciona a carta de crédito."]
 tmp = tempfile.mkdtemp()
 parts = []
-for i in range(24):  # ~4 min de fala
+N = 48
+for i in range(N):  # ~4 min de fala
     w = os.path.join(tmp, f"f{i}.wav")
     subprocess.run(["espeak-ng", "-v", "pt-br", "-s", "150", "-w", w, frases[i % len(frases)]], check=True)
     parts.append(w)
@@ -42,9 +43,11 @@ fn_batch = lambda: pipe.transcribe(audio, batch_size=8, vad_filter=False, clip_t
 run(fn_simple)  # aquece
 t1, txt1 = run(fn_simple)
 t2, txt2 = run(fn_batch)
-ref = " ".join(frases[i % len(frases)] for i in range(24)).lower().split()
+ref = " ".join(frases[i % len(frases)] for i in range(N)).lower().split()
 score = lambda t: difflib.SequenceMatcher(None, ref, t.lower().split()).ratio()
 print(f"ÁUDIO {dur:.0f}s | modelo {model_name} | {tr._threads()} núcleos")
 print(f"SIMPLES: {t1:.1f}s ({dur / t1:.1f}x tempo real) | acerto {score(txt1):.0%}")
 print(f"LOTE:    {t2:.1f}s ({dur / t2:.1f}x tempo real) | acerto {score(txt2):.0%} | {t1 / t2:.2f}x mais rápido")
-print("LOTE TEXTO:", txt2[:300])
+print(f"PALAVRAS: esperado {len(ref)} | simples {len(txt1.split())} | lote {len(txt2.split())}")
+print("SIMPLES TEXTO:", txt1.replace(chr(10), " "))
+print("LOTE TEXTO:", txt2.replace(chr(10), " "))
