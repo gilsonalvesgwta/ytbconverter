@@ -626,7 +626,7 @@ def _local(job, pcm, settings):
     skip = bool(settings.get("skip_silence"))
     lang = None if job["language"] == "auto" else job["language"]
     beam = int(os.environ.get("WHISPER_BEAM", "1"))
-    text, last_end = "", None
+    text, last_end, last_text = "", None, None
     _set(job, stage="Transcrevendo")
     for start, block in pcm.blocks(FIRST_BLOCK_SECONDS, LOCAL_BLOCK_SECONDS):
         audio = block.astype(np.float32) / 32768.0
@@ -643,7 +643,10 @@ def _local(job, pcm, settings):
                          seg.no_speech_prob, seg.avg_logprob, t)
             if MUSIC_ONLY.fullmatch(t):
                 t = ""  # só símbolo de música: não é texto
+            if t and t == last_text and seg.avg_logprob < -1.0:
+                t = ""  # repetição com baixa confiança (alucinação em trecho só de música); refrões reais passam
             if t:
+                last_text = t
                 s0 = start + seg.start
                 if text:
                     text += "\n\n" if last_end is not None and s0 - last_end > 2.0 else " "

@@ -350,7 +350,7 @@ class TestLocalEngine(base.Base):
         base.request(self.base, "/api/transcribe/settings", {"engine": "local", "local_model": model, "skip_silence": False}, headers=AUTH)
         falas = [(0, "Primeira parte. Bom dia a todos, sejam bem vindos."),
                  (70, "Segunda parte. Agora vamos falar de planejamento financeiro."),
-                 (135, "Terceira parte. Muito obrigado e até a próxima.")]
+                 (135, "Terceira parte. Boa noite a todos, até amanhã.")]
         inputs, filters = [], []
         for i, (t, frase) in enumerate(falas):
             w = os.path.join(TMP, f"fala{i}.wav")
@@ -371,9 +371,10 @@ class TestLocalEngine(base.Base):
         text = job["text"].lower()
         partes = {"começo": ["primeira", "bom dia", "bem vindo", "bem-vindo"],
                   "meio": ["segunda", "planejamento", "financeiro"],
-                  "fim": ["terceira", "obrigado", "próxima"]}
+                  "fim": ["terceira", "boa noite", "amanhã"]}
         faltando = [p for p, ws in partes.items() if not any(w in text for w in ws)]
         self.assertEqual(faltando, [], text)
+        self.assertAlmostEqual(job["transcribed"], 150, delta=1)               # passou pelo áudio todo
 
 
 if __name__ == "__main__":
