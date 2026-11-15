@@ -504,17 +504,21 @@ class TestYouTubeCaptions(base.Base):
         st, d = self.get("manual", ts=True)
         self.assertEqual(d["text"], "[00:00] Olá pessoal\n[00:02] tudo bem?\n[00:09] novo assunto\n[01:05] fim")
 
-    def test_auto_original_never_translated(self):
+    def test_auto_and_translation(self):
         st, d = self.get("auto")
         self.assertEqual((st, d["kind"], d["language"], d["text"]), (200, "auto", "en", "hello everyone welcome"))
-        st, d = self.get("auto", "pt")  # mesmo pedindo outro idioma: sempre o original
-        self.assertEqual((st, d["language"], d["text"]), (200, "en", "hello everyone welcome"))
+        st, d = self.get("auto", "pt")
+        self.assertEqual((st, d["kind"], d["text"]), (200, "traduzida", "olá a todos bem-vindos"))
+        st, d = self.get("auto", "es")
+        self.assertEqual(st, 404)
+        self.assertIn("Idioma original", d["error"])
 
-    def test_only_foreign_subtitles_not_used(self):
-        """Vídeo em português sem legenda em português, só uma tradução em inglês: não usa a tradução."""
+    def test_only_foreign_subtitles_not_used_as_original(self):
+        """Vídeo em português só com uma tradução em inglês: no modo original não usa a tradução."""
         st, d = self.get("traducao")
         self.assertEqual(st, 404)
-        self.assertIn("idioma original", d["error"])
+        st, d = self.get("traducao", "en")  # pedindo inglês de propósito, aí sim
+        self.assertEqual((st, d["text"]), (200, "hello everyone welcome"))
 
     def test_vtt_rolling_no_duplicates(self):
         st, d = self.get("vtt")
@@ -528,6 +532,7 @@ class TestYouTubeCaptions(base.Base):
     def test_auth_and_validation(self):
         self.assertEqual(base.request(self.base, "/api/youtube/transcript", {"url": self.url("manual")})[0], 401)
         self.assertEqual(base.request(self.base, "/api/youtube/transcript", {"url": "https://exemplo.com/x"}, headers=AUTH)[0], 400)
+        self.assertEqual(base.request(self.base, "/api/youtube/transcript", {"url": self.url("manual"), "lang": "xx"}, headers=AUTH)[0], 400)
 
 
 class TestNoStorageLeft(base.Base):

@@ -196,15 +196,16 @@
       <input id="tr-url" type="url" placeholder="Cole um link do YouTube para transcrever o vídeo inteiro">
       <div class="row" style="margin-top:14px;align-items:flex-end">
         <div style="flex:1" id="tr-lang-box"><label for="tr-lang">Idioma do áudio</label><select id="tr-lang"></select></div>
-        <div style="flex:1" id="tr-cap-box" hidden><label>&nbsp;</label><div class="hint" style="padding:12px 0">Transcrição no idioma original do vídeo, exatamente como o YouTube disponibiliza (sem tradução).</div></div>
+        <div style="flex:1" id="tr-cap-box" hidden><label for="tr-cap-lang">Idioma da transcrição</label>
+          <select id="tr-cap-lang"><option value="orig" selected>Idioma original do vídeo (padrão)</option><option value="pt">Português (traduz se precisar)</option><option value="en">Inglês</option><option value="es">Espanhol</option></select></div>
         <button class="btn" id="tr-go" type="submit" style="height:46px">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
           <span id="tr-go-label">Transcrever</span></button>
         <button class="ghost stop" id="tr-stop" type="button" hidden style="height:46px" title="Parar e manter o texto transcrito até agora">■ Parar</button>
       </div>
       <div id="tr-cap-extra" hidden style="margin-top:10px">
-        <label class="check"><input type="checkbox" id="tr-ts"> Incluir marcações de tempo [mm:ss]</label>
-        <div class="hint">Copia a transcrição que o próprio YouTube já tem, no idioma original do áudio e sem tradução (legenda do criador ou automática): leva só alguns segundos, de qualquer tamanho de vídeo.</div>
+        <label class="check"><input type="checkbox" id="tr-ts" checked> Incluir marcações de tempo [mm:ss]</label>
+        <div class="hint">Copia a transcrição que o próprio YouTube já tem (legenda do criador ou automática): leva só alguns segundos, de qualquer tamanho de vídeo.</div>
       </div>
       <div class="summary" id="tr-summary"></div>
       <div class="status" id="tr-status"></div>
@@ -612,8 +613,8 @@
     $("tr-go-label").textContent = link ? "Buscar transcrição" : "Transcrever";
   }
   $("tr-url").addEventListener("input", syncMode);
-  try { const c = JSON.parse(ls.get("ytbc.cap") || "{}"); $("tr-ts").checked = !!c.ts; } catch {}
-  $("tr-ts").addEventListener("change", () => ls.set("ytbc.cap", JSON.stringify({ ts: $("tr-ts").checked })));
+  $("tr-cap-lang").value = "orig"; $("tr-ts").checked = true;  // padrão: idioma original, com marcações de tempo
+  ls.del("ytbc.cap");
   let warmTimer = null;
   $("tr-url").addEventListener("input", () => {  // já lê os dados do vídeo enquanto você confere: ao clicar, começa direto
     clearTimeout(warmTimer); const u = $("tr-url").value.trim();
@@ -821,7 +822,7 @@
   async function fetchCaptions(url, ctl) {
     setStatus("info", `<span class="spin"></span>&nbsp; Buscando a transcrição no YouTube…`);
     const res = await api("/api/youtube/transcript", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, timestamps: $("tr-ts").checked }) });
+      body: JSON.stringify({ url, lang: $("tr-cap-lang").value, timestamps: $("tr-ts").checked }) });
     const d = await res.json();
     if (!d.ok) {
       if (res.status === 404) {
@@ -836,7 +837,7 @@
     const text = d.text || "";
     $("tr-text").value = text;
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    const kinds = { manual: "legenda do criador", auto: "legenda automática do YouTube" };
+    const kinds = { manual: "legenda do criador", auto: "legenda automática do YouTube", traduzida: "tradução automática do YouTube" };
     $("tr-meta").textContent = `${d.title} · ${kinds[d.kind] || "legenda"} (${d.language}) · ${words.toLocaleString("pt-BR")} palavras · em ${((Date.now() - ctl.t0) / 1000).toFixed(1)}s`;
     $("tr-result").classList.add("show"); $("tr-copy").disabled = !text; bar(null);
     setStatus("ok", "✔ Transcrição do YouTube pronta. Clique em <b>Copiar transcrição</b> para copiar todo o texto.");

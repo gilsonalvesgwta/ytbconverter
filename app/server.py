@@ -281,7 +281,7 @@ def pick_caption_track(info, want="orig"):
         if orig_lang and find(auto, orig_lang):
             k = find(auto, orig_lang)
             return auto[k], k, "auto"
-        return None  # só existem legendas em outros idiomas (traduções): não usamos
+        return None  # só existem legendas em outros idiomas (traduções): no modo original não usamos
     k = find(subs, want)
     if k:
         return subs[k], k, "manual"
@@ -362,7 +362,9 @@ def fetch_youtube_transcript(url, want="orig", timestamps=False):
     info = extract_info(url)
     choice = pick_caption_track(info, want)
     if not choice:
-        raise UserError("Este vídeo não tem transcrição no idioma original disponível no YouTube.", 404)
+        if want != "orig" and pick_caption_track(info, "orig"):
+            raise UserError("Este vídeo não tem legenda nesse idioma. Escolha \"Idioma original do vídeo\".", 404)
+        raise UserError("Este vídeo não tem transcrição disponível no YouTube.", 404)
     tracks, lang, kind = choice
     by_ext = {t.get("ext"): t for t in tracks if t.get("url")}
     track = by_ext.get("json3") or by_ext.get("vtt") or by_ext.get("srv3") or next(iter(by_ext.values()), None)
@@ -649,8 +651,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/youtube/transcript":
                 self._require_auth()
                 b = self._json_body()
-                # sempre no idioma original do áudio, exatamente como o YouTube disponibiliza (sem tradução)
-                out = fetch_youtube_transcript(validate_url(b.get("url")), "orig", bool(b.get("timestamps")))
+                want = b.get("lang") or "orig"
+                if want not in [c for c, _ in CAPTION_LANGS]:
+                    raise UserError("Idioma inválido.")
+                out = fetch_youtube_transcript(validate_url(b.get("url")), want, bool(b.get("timestamps")))
                 return self._json(200, {"ok": True, **out})
             if path == "/api/transcribe/start":
                 # envio + transcrição juntos: começa a transcrever enquanto o áudio chega
