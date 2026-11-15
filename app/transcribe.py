@@ -365,7 +365,13 @@ def _local(job, wav, settings):
         model = _model_cache["model"]
     _set(job, stage="Transcrevendo")
     lang = None if job["language"] == "auto" else job["language"]
-    segments, _info = model.transcribe(wav, language=lang, beam_size=int(os.environ.get("WHISPER_BEAM", "1")),
+    # áudio já está em WAV 16 kHz mono: entregamos as amostras prontas
+    # (evita a leitura via PyAV, que muda entre versões)
+    import numpy as np
+    import wave
+    with wave.open(wav, "rb") as fh:
+        audio = np.frombuffer(fh.readframes(fh.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
+    segments, _info = model.transcribe(audio, language=lang, beam_size=int(os.environ.get("WHISPER_BEAM", "1")),
                                        vad_filter=True, condition_on_previous_text=False)
     duration = job["duration"] or 1
     parts, last_end = [], None
