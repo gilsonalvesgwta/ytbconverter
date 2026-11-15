@@ -413,6 +413,7 @@ def _local(job, wav, settings):
             _model_cache["name"] = name
         model = _model_cache["model"]
     _set(job, stage="Transcrevendo")
+    skip = bool(settings.get("skip_silence"))
     lang = None if job["language"] == "auto" else job["language"]
     # áudio já está em WAV 16 kHz mono: entregamos as amostras prontas
     # (evita a leitura via PyAV, que muda entre versões)
@@ -421,12 +422,17 @@ def _local(job, wav, settings):
     with wave.open(wav, "rb") as fh:
         audio = np.frombuffer(fh.readframes(fh.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
     segments, _info = model.transcribe(audio, language=lang, beam_size=int(os.environ.get("WHISPER_BEAM", "1")),
-                                       vad_filter=bool(settings.get("skip_silence")),
+                                       vad_filter=skip,
+                                       # sem isto o Whisper descarta janelas de 30 s que "parecem" não ter
+                                       # fala (canto, fala com música de fundo) e a transcrição sai cortada
+                                       no_speech_threshold=0.6 if skip else None,
                                        condition_on_previous_text=False)
     duration = job["duration"] or 1
     parts, last_end = [], None
     for seg in segments:
         text = seg.text.strip()
+        if re.fullmatch(r"[\s♪♫♬♩🎵🎶*.\-]*|\[(música|music|musique|aplausos|applause)\]|\((música|music)\)", text, re.I):
+            text = ""  # só símbolo de música: não é texto
         if text:
             if last_end is not None:
                 parts.append("\n\n" if seg.start - last_end > 2.0 else " ")
