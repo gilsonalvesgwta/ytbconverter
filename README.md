@@ -18,7 +18,7 @@ Endereço: **https://ytbconversor.wtatech.com.br**
 2. Clique em **Transcrever**. A barra mostra o envio e o andamento.
 3. No fim, clique em **Copiar transcrição**: copia só o texto, inteiro, com um clique. Também há **Baixar .txt**.
 
-O texto sai no mesmo formato da transcrição do YouTube: uma frase curta por linha, com o horário de início (`[00:20] The silence learned the shape of your`). Desmarcar "Incluir marcações de tempo" mostra o texto corrido na hora. No motor gratuito o horário vem de cada palavra; na OpenAI é estimado dentro de cada parte de 5 minutos.
+O texto sai no mesmo formato da transcrição do YouTube: uma frase curta por linha, com o horário de início (`[00:20] The silence learned the shape of your`). Desmarcar "Incluir marcações de tempo" mostra o texto corrido na hora. No motor gratuito o horário vem dos trechos que o próprio Whisper marca (do tamanho de frases); na OpenAI é estimado dentro de cada parte de 5 minutos. Trechos sem fala com música (medidos pelo volume do áudio) ganham linhas `[music]` (ou `[Música]` em português/espanhol) a cada 10 s, como no YouTube; silêncio não ganha marcação.
 
 Se você recarregar a página no meio, ela retoma a transcrição em andamento. O botão **■ Parar** interrompe na hora: o texto transcrito até ali fica na tela (pode copiar) e você já pode começar outro vídeo ou arquivo.
 

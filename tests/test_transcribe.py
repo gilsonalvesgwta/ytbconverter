@@ -584,8 +584,17 @@ class TestYouTubeFormat(unittest.TestCase):
     def test_long_line_is_split(self):
         ws = [(i * 0.3, i * 0.3 + 0.25, f" palavra{i}") for i in range(20)]
         lines = self.t.words_to_lines(ws)
-        self.assertTrue(all(len(x.split()) <= 7 and len(x) <= 42 for _, x in lines), lines)
-        self.assertEqual(" ".join(x for _, x in lines), " ".join(w.strip() for *_, w in ws))
+        self.assertTrue(all(len(x.split()) <= 7 and len(x) <= 42 for _, _, x in lines), lines)
+        self.assertEqual(" ".join(x for _, _, x in lines), " ".join(w.strip() for *_, w in ws))
+
+    def test_music_tags_only_where_there_is_sound(self):
+        rms = [0.1] * 20 + [0.001] * 10 + [0.1] * 40           # música, silêncio, música
+        self.assertEqual(self.t.lines_to_text(self.t.music_lines(rms, 0.0, 19.0, "[music]")),
+                         "[00:00] [music]\n[00:10] [music]")
+        self.assertEqual(self.t.music_lines(rms, 20.0, 29.5, "[music]"), [])   # silêncio: nada
+        self.assertEqual(self.t.music_lines(rms, 30.0, 33.0, "[music]"), [])   # pausa curta: nada
+        self.assertEqual(self.t.music_tag("en"), "[music]")
+        self.assertEqual(self.t.music_tag("pt"), "[Música]")
 
     def test_text_to_lines_estimates_time(self):
         out = self.t.lines_to_text(self.t.text_to_lines(
@@ -637,6 +646,7 @@ class TestLocalEngine(base.Base):
         job = wait_job(self.base, d["job"]["id"], timeout=900)
         print("\nTRANSCRICAO_LOCAL:", job.get("text") or job.get("error"))
         print("TRANSCRICAO_LOCAL_TS:", (job.get("text_ts") or "").replace("\n", " | "))
+        self.assertNotIn("[Música]", job["text_ts"])                            # fala sem música: nenhuma marcação
         ts_lines = job["text_ts"].split("\n")
         self.assertGreaterEqual(len(ts_lines), 3, job["text_ts"])
         for line in ts_lines:
@@ -680,6 +690,10 @@ class TestLocalEngine(base.Base):
         self.assertEqual(faltando, [], text)
         self.assertAlmostEqual(job["transcribed"], 150, delta=1)               # passou pelo áudio todo
         self.assertLess(len(text.split()), 40, text)                           # sem enxurrada de texto inventado
+        print("TRANSCRICAO_MUSICA_TS:", job["text_ts"].replace("\n", " | "))
+        self.assertIn("[Música]", job["text_ts"])                              # trechos só de música marcados
+        self.assertNotIn("[Música]", job["text"])                              # texto corrido sem marcações
+        self.assertTrue(job["text_ts"].startswith("[00:00] "), job["text_ts"])
 
 
 if __name__ == "__main__":

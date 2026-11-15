@@ -754,14 +754,14 @@ def words_to_lines(words, max_words=7, max_chars=42, pause=0.7):
             continue
         if cur and (a - last_end > pause or len(cur) >= max_words
                     or len(" ".join(cur)) + 1 + len(w) > max_chars or re.search(r"[.!?…]$", cur[-1])):
-            lines.append((start, " ".join(cur)))
+            lines.append((start, last_end, " ".join(cur)))
             cur = []
         if not cur:
             start = a
         cur.append(w)
         last_end = b
     if cur:
-        lines.append((start, " ".join(cur)))
+        lines.append((start, last_end, " ".join(cur)))
     return lines
 
 
@@ -780,7 +780,35 @@ def text_to_lines(text, t0, dur):
 
 
 def lines_to_text(lines):
-    return "\n".join(f"[{fmt_ts(t)}] {x}" for t, x in lines)
+    return "\n".join(f"[{fmt_ts(ln[0])}] {ln[-1]}" for ln in lines)
+
+
+# ---------------------------------------------------------------- [music] como no YouTube
+MUSIC_GAP = float(os.environ.get("MUSIC_GAP_SECONDS", "4"))      # trecho sem fala a partir de 4 s
+MUSIC_EVERY = float(os.environ.get("MUSIC_EVERY_SECONDS", "10"))  # uma marcação a cada 10 s
+MUSIC_RMS = float(os.environ.get("MUSIC_MIN_RMS", "0.015"))       # abaixo disso é silêncio (~ -36 dBFS)
+
+
+def music_tag(language):
+    return "[music]" if (language or "en").startswith("en") else "[Música]"
+
+
+def is_sound(rms_sec, a, b):
+    """Há som (música) entre a e b segundos? Pelo menos 60% dos segundos acima do limite de silêncio."""
+    seg = rms_sec[int(a):max(int(a) + 1, int(b))]
+    return bool(seg) and sum(1 for v in seg if v >= MUSIC_RMS) >= 0.6 * len(seg)
+
+
+def music_lines(rms_sec, a, b, tag):
+    """Linhas de [music] para o intervalo sem fala (a, b), só se houver som nele."""
+    if b - a < MUSIC_GAP or not is_sound(rms_sec, a, b):
+        return []
+    out, t = [], a + 0.5
+    while t < b - 1:
+        if is_sound(rms_sec, t, min(b, t + MUSIC_EVERY)):
+            out.append((t, min(b, t + MUSIC_EVERY), tag))
+        t += MUSIC_EVERY
+    return out
 
 
 WHISPER_BATCH = max(1, int(os.environ.get("WHISPER_BATCH", "8")))
@@ -832,10 +860,19 @@ def _local(job, pcm, settings):
     lang = None if job["language"] == "auto" else job["language"]
     beam = int(os.environ.get("WHISPER_BEAM", "1"))
     text, last_end, last_text, lines = "", None, None, []
+    rms_sec, prev_end, tag = [], 0.0, music_tag(lang)
     _set(job, stage="Transcrevendo")
     for start, block in pcm.blocks(FIRST_BLOCK_SECONDS, LOCAL_BLOCK_SECONDS):
         audio = block.astype(np.float32) / 32768.0
-        common = dict(language=lang, beam_size=beam, word_timestamps=True,
+        # volume de cada segundo (para saber se um trecho sem fala tem música ou é silêncio)
+        first = int(round(start))
+        n = len(audio) // SR
+        if n:
+            per = np.sqrt((audio[: n * SR].reshape(n, SR) ** 2).mean(axis=1)).tolist()
+            del rms_sec[first:]
+            rms_sec.extend([0.0] * max(0, first - len(rms_sec)) + per)
+        # horário pelo próprio modelo (trechos do tamanho de frases): ~12% mais rápido que palavra por palavra
+        common = dict(language=lang, beam_size=beam, word_timestamps=False,
                       # sem isto o Whisper descarta trechos que "parecem" não ter fala
                       # (canto, fala com música de fundo) e a transcrição sai cortada
                       no_speech_threshold=0.6 if skip else None, condition_on_previous_text=False)
@@ -843,7 +880,7 @@ def _local(job, pcm, settings):
         segments = None
         if pipe is not None:
             try:
-                segments, _info = pipe.transcribe(audio, batch_size=WHISPER_BATCH, vad_filter=skip,
+                segments, _info = pipe.transcribe(audio, batch_size=WHISPER_BATCH, vad_filter=skip, without_timestamps=False,
                                                   clip_timestamps=None if skip else plan_clips(audio), **common)
             except (TypeError, ValueError) as exc:  # versão do faster-whisper sem suporte: volta ao modo simples
                 log.warning("processamento em lote indisponível (%s); usando o modo simples", exc)
@@ -851,6 +888,8 @@ def _local(job, pcm, settings):
                 segments = None
         if segments is None:
             segments, _info = model.transcribe(audio, vad_filter=skip, **common)
+        if lang is None and getattr(_info, "language", None):
+            tag = music_tag(_info.language)
         for seg in segments:
             _check_cancel(job)
             t = seg.text.strip()
@@ -872,10 +911,19 @@ def _local(job, pcm, settings):
                 text += t
                 last_end = start + seg.end
                 ws = [(start + w.start, start + w.end, w.word) for w in (getattr(seg, "words", None) or [])]
-                lines += words_to_lines(ws) if ws else [(s0, t)]
+                new = words_to_lines(ws) if ws else text_to_lines(t, s0, max(0.1, start + seg.end - s0))
+                for ln in new:
+                    lines += music_lines(rms_sec, prev_end, ln[0], tag)
+                    lines.append(ln)
+                    prev_end = max(prev_end, ln[1])
                 _set(job, text=text, text_ts=lines_to_text(lines))
             _progress(job, start + seg.end)
         _progress(job, start + len(block) / SR)
+    total = pcm.available() / SR
+    tail = music_lines(rms_sec, prev_end, total, tag)  # música depois da última fala
+    if tail:
+        lines += tail
+        _set(job, text_ts=lines_to_text(lines))
     return text
 
 

@@ -30,10 +30,6 @@ jobs:
         env:
           LOG_SEGMENTS: "1"
           SHOW_SERVER_LOG: "1"
-      - name: Comparativo de velocidade (simples x lote)
-        continue-on-error: true
-        run: |
-          python tests/bench_variants.py
 
   imagem:
     name: Imagem amd64 + arm64
