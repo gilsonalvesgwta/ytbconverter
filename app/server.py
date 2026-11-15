@@ -858,6 +858,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    # prioridade baixa: usa o processador que estiver livre e cede na hora para os
+    # outros sistemas da VPS (n8n, CRM...)
+    try:
+        os.nice(int(os.environ.get("PRIORIDADE_NICE", "10")))
+    except (OSError, ValueError):
+        pass
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
     except OSError:

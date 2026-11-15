@@ -42,7 +42,7 @@ CHUNK_MAX_BYTES = 64 * 1024 * 1024
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com").rstrip("/")
 OPENAI_CHUNK_SECONDS = int(os.environ.get("OPENAI_CHUNK_SECONDS", "300"))
 OPENAI_PARALLEL = max(1, int(os.environ.get("OPENAI_PARALLEL", "4")))
-LOCAL_BLOCK_SECONDS = int(os.environ.get("LOCAL_BLOCK_SECONDS", "120"))
+LOCAL_BLOCK_SECONDS = int(os.environ.get("LOCAL_BLOCK_SECONDS", "240"))  # 8 trechos de 30 s por lote
 FIRST_BLOCK_SECONDS = int(os.environ.get("FIRST_BLOCK_SECONDS", "30"))
 STREAM_IDLE_SECONDS = int(os.environ.get("STREAM_IDLE_SECONDS", "600"))  # envio parado no meio
 PRELOAD_MODEL = os.environ.get("PRELOAD_MODEL", "true") == "true"
@@ -736,6 +736,44 @@ def preload_model_async():
     threading.Thread(target=run, name="pre-carga", daemon=True).start()
 
 
+WHISPER_BATCH = max(1, int(os.environ.get("WHISPER_BATCH", "8")))
+_batched_cache = {"model": None, "pipe": None, "broken": False}
+
+
+def _batched_pipeline(model):
+    """Processamento em lote: vários trechos de 30 s de uma vez (bem mais rápido no processador)."""
+    if WHISPER_BATCH <= 1 or _batched_cache["broken"]:
+        return None
+    if _batched_cache["model"] is not model:
+        try:
+            from faster_whisper import BatchedInferencePipeline
+        except ImportError:
+            _batched_cache["broken"] = True
+            return None
+        _batched_cache.update(model=model, pipe=BatchedInferencePipeline(model=model))
+    return _batched_cache["pipe"]
+
+
+def plan_clips(audio, max_len=30.0, min_len=20.0):
+    """Divide em trechos de até 30 s, cortando no ponto mais silencioso entre 20 e 30 s
+    (assim nenhuma palavra é partida ao meio)."""
+    import numpy as np
+    n, clips, pos = len(audio), [], 0
+    frame = SR // 20  # 50 ms
+    while pos < n:
+        if n - pos <= max_len * SR:
+            clips.append({"start": pos / SR, "end": n / SR})
+            break
+        a, b = pos + int(min_len * SR), pos + int(max_len * SR)
+        win = audio[a:b]
+        k = len(win) // frame
+        rms = np.sqrt((win[: k * frame].reshape(k, frame) ** 2).mean(axis=1))
+        cut = a + int(np.argmin(rms)) * frame + frame // 2
+        clips.append({"start": pos / SR, "end": cut / SR})
+        pos = cut
+    return clips
+
+
 def _local(job, pcm, settings):
     try:
         import faster_whisper  # noqa
@@ -750,23 +788,34 @@ def _local(job, pcm, settings):
     _set(job, stage="Transcrevendo")
     for start, block in pcm.blocks(FIRST_BLOCK_SECONDS, LOCAL_BLOCK_SECONDS):
         audio = block.astype(np.float32) / 32768.0
-        segments, _info = model.transcribe(
-            audio, language=lang, beam_size=beam, vad_filter=skip,
-            # sem isto o Whisper descarta janelas de 30 s que "parecem" não ter fala
-            # (canto, fala com música de fundo) e a transcrição sai cortada
-            no_speech_threshold=0.6 if skip else None,
-            condition_on_previous_text=False)
+        common = dict(language=lang, beam_size=beam,
+                      # sem isto o Whisper descarta trechos que "parecem" não ter fala
+                      # (canto, fala com música de fundo) e a transcrição sai cortada
+                      no_speech_threshold=0.6 if skip else None, condition_on_previous_text=False)
+        pipe = _batched_pipeline(model)
+        segments = None
+        if pipe is not None:
+            try:
+                segments, _info = pipe.transcribe(audio, batch_size=WHISPER_BATCH, vad_filter=skip,
+                                                  clip_timestamps=None if skip else plan_clips(audio), **common)
+            except (TypeError, ValueError) as exc:  # versão do faster-whisper sem suporte: volta ao modo simples
+                log.warning("processamento em lote indisponível (%s); usando o modo simples", exc)
+                _batched_cache["broken"] = True
+                segments = None
+        if segments is None:
+            segments, _info = model.transcribe(audio, vad_filter=skip, **common)
         for seg in segments:
             _check_cancel(job)
             t = seg.text.strip()
+            nsp = getattr(seg, "no_speech_prob", 0.0) or 0.0
+            lp = getattr(seg, "avg_logprob", 0.0) or 0.0
             if LOG_SEGMENTS:
-                log.info("seg %.1f-%.1f nsp=%.2f lp=%.2f %r", start + seg.start, start + seg.end,
-                         seg.no_speech_prob, seg.avg_logprob, t)
+                log.info("seg %.1f-%.1f nsp=%.2f lp=%.2f %r", start + seg.start, start + seg.end, nsp, lp, t)
             if MUSIC_ONLY.fullmatch(t):
                 t = ""  # só símbolo de música: não é texto
-            if t and seg.no_speech_prob > 0.7 and seg.avg_logprob < -1.5:
+            if t and nsp > 0.7 and lp < -1.5:
                 t = ""  # quase certamente não é fala e o modelo "chutou" (texto inventado em trecho só de música)
-            if t and t == last_text and seg.avg_logprob < -1.0:
+            if t and t == last_text and lp < -1.0:
                 t = ""  # repetição com baixa confiança (alucinação em trecho só de música); refrões reais passam
             if t:
                 last_text = t

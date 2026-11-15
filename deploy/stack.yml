@@ -25,8 +25,9 @@ services:
         delay: 10s
       resources:
         limits:
-          cpus: "${LIMITE_CPU:-2}"
-          memory: ${LIMITE_MEMORIA:-3072M}
+          # sem limite de processador: o serviço roda com prioridade baixa (nice), usa o que
+          # estiver livre e cede na hora para os outros sistemas da VPS
+          memory: ${LIMITE_MEMORIA:-4096M}
       labels:
         - traefik.enable=true
         - traefik.docker.network=${REDE_TRAEFIK:-Wtatechor3Net}
