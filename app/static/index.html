@@ -168,6 +168,18 @@
   .adres{font-size:12.5px;border-radius:8px;padding:7px 9px;display:none}
   .adres.show{display:block}
   .empty{text-align:center;color:var(--muted);padding:36px 12px;border:1px dashed var(--line);border-radius:var(--radius)}
+  .saved{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:#061a30;display:none}
+  .saved.show{display:block}
+  .saved-row{display:flex;gap:10px;align-items:center;padding:11px 13px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .saved-row:last-child{border-bottom:0}
+  .saved-row.cur{background:rgba(255,102,0,.07)}
+  .saved-row .info{flex:1;min-width:220px}
+  .saved-row .info b{font-size:14px} .saved-row .info div{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .saved-row .ghost{padding:6px 10px;font-size:12.5px}
+  .curbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:22px;padding:11px 14px;border:1px solid var(--line);
+    border-radius:12px;background:var(--navy-2)}
+  .curbar .t{flex:1;min-width:220px;font-size:13.5px} .curbar .t div{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .curbar .ghost{padding:7px 11px;font-size:12.5px}
   .steps{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.7}
   .steps b{color:var(--text)}
   @media(max-width:860px){.grid3{grid-template-columns:1fr 1fr}}
@@ -349,12 +361,14 @@
         <select id="ch-minsubs"><option value="0" selected>Qualquer</option><option value="100">100</option><option value="1000">1.000 (mínimo para monetizar)</option><option value="10000">10 mil</option></select></div>
     </div>
     <div class="ch-go">
-      <div class="ch-est" id="ch-est">&nbsp;</div>
+      <div class="ch-est"><div id="ch-est">&nbsp;</div><div id="ch-same" style="margin-top:6px"></div></div>
+      <button type="button" class="ghost" id="ch-saved-btn" style="margin-left:auto">🗂 Buscas salvas</button>
       <button class="btn" id="ch-go" type="button">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <span>Buscar canais</span></button>
     </div>
     <div class="status" id="ch-status"></div>
+    <div class="saved" id="ch-saved"></div>
 
     <details id="ch-settings">
       <summary><span class="arr">▶</span> Configurações da busca (chave da API do YouTube)</summary>
@@ -378,6 +392,7 @@
     </details>
   </div>
 
+  <div class="curbar" id="ch-cur" hidden></div>
   <div class="ch-toolbar" id="ch-toolbar" hidden>
     <div class="sum" id="ch-sum"></div>
     <input id="ch-filter" placeholder="Filtrar por nome">
@@ -1159,6 +1174,8 @@
   const LS = "ytbc.ch.filters", LSR = "ytbc.ch.results";
   const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } }, set(k, v){ try { localStorage.setItem(k, v); } catch {} } };
   let opts = null, results = [], stats = null, favs = [], showFavs = false, loaded = false, estTimer = null, selGenres = new Set();
+  let saved = [], cur = null;  // buscas salvas no servidor; busca aberta agora
+  const when = (iso) => { const d = new Date(iso); return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); };
   const MON = { provavel: ["ok", "Monetização provável"], perto: ["warn", "Perto de monetizar"], improvavel: ["", "Ainda não elegível"],
                 talvez: ["warn", "Talvez (inscritos ocultos)"], desconhecido: ["", "Sem dados de monetização"] };
   function setStatus(kind, html, el = $("ch-status")) { el.className = "status " + (kind || ""); el.innerHTML = html || ""; }
@@ -1168,9 +1185,9 @@
     try {
       const d = await (await api("/api/channels/settings")).json();
       if (!d.ok) throw new Error(d.error);
-      opts = d.options; loaded = true; fill(d); restore(); estimate(); loadFavs();
+      opts = d.options; loaded = true; fill(d); restore(); estimate(); loadFavs(); loadSaved();
       if (!d.api_key_set) { $("ch-settings").open = true; setStatus("info", "Para começar, cadastre a chave gratuita da API do YouTube em <b>Configurações da busca</b> (passo a passo abaixo)."); }
-      try { const r = JSON.parse(ls.get(LSR) || "null"); if (r && r.channels) { results = r.channels; stats = r.stats; render(); } } catch {}
+      try { const r = JSON.parse(ls.get(LSR) || "null"); if (r && r.channels) { results = r.channels; stats = r.stats; cur = r.cur || null; render(); } } catch {}
     } catch (e) { setStatus("err", esc(e.message || "Não consegui carregar.")); }
   }
   function quota(d) {
@@ -1213,7 +1230,10 @@
   async function estimate() {
     try {
       const d = await (await api("/api/channels/estimate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(params()) })).json();
-      if (d.ok) $("ch-est").innerHTML = `Esta busca: <b>${d.searches}</b> consulta${d.searches > 1 ? "s" : ""} · ≈ <b>${full(d.units)}</b> unidades da cota diária gratuita`;
+      if (d.ok) {
+        $("ch-est").innerHTML = `Esta busca: <b>${d.searches}</b> consulta${d.searches > 1 ? "s" : ""} · ≈ <b>${full(d.units)}</b> unidades da cota diária gratuita`;
+        $("ch-same").innerHTML = d.same ? `💡 Você já fez esta mesma busca em ${when(d.same.created)} (${d.same.found} canais). <button type="button" class="ghost" data-open="${d.same.id}" style="padding:4px 9px;font-size:12px">Abrir a salva — 0 unidades</button>` : "";
+      }
     } catch {}
   }
 
@@ -1225,9 +1245,11 @@
       const res = await api("/api/channels/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(params()) });
       const d = await res.json();
       if (!d.ok) throw new Error(d.error);
-      results = d.channels; stats = d.stats; showFavs = false; $("ch-favs").classList.remove("on");
+      results = d.channels; stats = d.stats; showFavs = false; $("ch-favs").classList.remove("on"); $("ch-favs").style.color = "";
+      cur = d.saved || null;
       quota({ quota_used: d.quota.used, quota_limit: d.quota.limit });
-      ls.set(LSR, JSON.stringify({ channels: results, stats }));
+      ls.set(LSR, JSON.stringify({ channels: results, stats, cur }));
+      loadSaved(); estimate();
       setStatus(results.length ? "ok" : "info", results.length
         ? `✔ <b>${results.length}</b> canais encontrados em ${stats.seconds}s.`
         : "Nenhum canal novo passou nos filtros. Tente: canal criado há mais dias, menos visualizações mínimas, varredura Profunda ou gêneros específicos.");
@@ -1284,7 +1306,67 @@
       <div class="adres"></div>
     </div>`;
   }
+  function renderCur() {
+    if (!cur || showFavs) { $("ch-cur").hidden = true; return; }
+    $("ch-cur").hidden = false;
+    const upd = cur.updated && cur.updated !== cur.created ? ` · números atualizados em ${when(cur.updated)}` : "";
+    $("ch-cur").innerHTML = `<div class="t"><b>${esc(cur.name || "Busca de " + when(cur.created))}</b>
+        <div>${esc(cur.label)}${upd} · salva no servidor</div></div>
+      <button type="button" class="ghost" data-cur="refresh" title="Atualiza inscritos, views e métricas sem refazer a busca">↻ Atualizar números (≈${cur.refresh_units || 1} unidade${(cur.refresh_units || 1) > 1 ? "s" : ""})</button>
+      <button type="button" class="ghost" data-cur="rename">Renomear</button>`;
+  }
+  function renderSaved() {
+    const box = $("ch-saved");
+    $("ch-saved-btn").textContent = `🗂 Buscas salvas (${saved.length})`;
+    if (!box.classList.contains("show")) return;
+    box.innerHTML = saved.length ? saved.map(x => `<div class="saved-row${cur && cur.id === x.id ? " cur" : ""}">
+        <div class="info"><b>${esc(x.name || "Busca de " + when(x.created))}</b><div>${esc(x.label)} · <b style="color:var(--text)">${x.found}</b> canais</div></div>
+        <button type="button" class="ghost" data-open="${x.id}">Abrir</button>
+        <button type="button" class="ghost" data-del="${x.id}" title="Excluir">✕</button></div>`).join("")
+      : `<div class="saved-row"><div class="info"><div>Nenhuma busca salva ainda. Toda busca feita fica guardada aqui automaticamente.</div></div></div>`;
+  }
+  async function loadSaved() { try { const d = await (await api("/api/channels/searches")).json(); if (d.ok) { saved = d.searches; renderSaved(); } } catch {} }
+  async function openSaved(id) {
+    setStatus("info", `<span class="spin"></span>&nbsp; Abrindo busca salva…`);
+    try {
+      const d = await (await api("/api/channels/searches/" + id)).json();
+      if (!d.ok) throw new Error(d.error);
+      const s_ = d.search;
+      results = s_.channels; stats = s_.stats; showFavs = false; $("ch-favs").style.color = "";
+      cur = { id: s_.id, created: s_.created, updated: s_.updated, name: s_.name, label: s_.label, refresh_units: s_.refresh_units };
+      ls.set(LSR, JSON.stringify({ channels: results, stats, cur }));
+      setStatus("ok", `✔ Busca salva aberta: <b>${results.length}</b> canais — 0 unidades gastas.`);
+      $("ch-saved").classList.remove("show"); render(); renderSaved();
+      $("ch-cur").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e) { setStatus("err", esc(e.message)); }
+  }
+  async function delSaved(id) {
+    if (!confirm("Excluir esta busca salva?")) return;
+    const d = await (await api("/api/channels/searches/" + id, { method: "DELETE" })).json();
+    if (d.ok) { saved = d.searches; if (cur && cur.id === id) { cur = null; ls.set(LSR, JSON.stringify({ channels: results, stats, cur })); renderCur(); } renderSaved(); estimate(); }
+  }
+  async function refreshCur(btn) {
+    btn.disabled = true; const old = btn.textContent; btn.textContent = "Atualizando…";
+    try {
+      const d = await (await api("/api/channels/searches/" + cur.id + "/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json();
+      if (!d.ok) throw new Error(d.error);
+      const s_ = d.search;
+      results = s_.channels; Object.assign(cur, { updated: s_.updated, refresh_units: s_.refresh_units });
+      quota({ quota_used: s_.quota.used, quota_limit: s_.quota.limit });
+      ls.set(LSR, JSON.stringify({ channels: results, stats, cur }));
+      setStatus("ok", `✔ Números atualizados (${s_.units_spent} unidade${s_.units_spent !== 1 ? "s" : ""}).`); render();
+    } catch (e) { setStatus("err", esc(e.message)); btn.textContent = old; }
+    btn.disabled = false;
+  }
+  async function renameCur() {
+    const name = prompt("Nome para esta busca:", cur.name || "");
+    if (name == null) return;
+    const d = await (await api("/api/channels/searches/" + cur.id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) })).json();
+    if (d.ok) { cur.name = d.search.name; ls.set(LSR, JSON.stringify({ channels: results, stats, cur })); renderCur(); loadSaved(); }
+  }
+
   function render() {
+    renderCur();
     const arr = list();
     $("ch-toolbar").hidden = !(results.length || favs.length);
     $("ch-sum").innerHTML = showFavs ? `<b>${arr.length}</b> canais favoritos`
@@ -1354,6 +1436,14 @@
   ["ch-filter", "ch-sort", "ch-mon"].forEach(id => $(id).addEventListener(id === "ch-filter" ? "input" : "change", render));
   $("ch-favs").addEventListener("click", () => { showFavs = !showFavs; $("ch-favs").classList.toggle("on", showFavs); $("ch-favs").style.color = showFavs ? "#ffc542" : ""; render(); });
   $("ch-csv").addEventListener("click", csv);
+  $("ch-saved-btn").addEventListener("click", () => { $("ch-saved").classList.toggle("show"); renderSaved(); });
+  document.getElementById("tab-ch").addEventListener("click", (e) => {
+    const o = e.target.closest("[data-open]"), dl = e.target.closest("[data-del]"), c = e.target.closest("[data-cur]");
+    if (o) openSaved(o.dataset.open);
+    if (dl) delSaved(dl.dataset.del);
+    if (c && c.dataset.cur === "refresh") refreshCur(c);
+    if (c && c.dataset.cur === "rename") renameCur();
+  });
   $("ch-save").addEventListener("click", () => saveKey(false));
   $("ch-clear").addEventListener("click", () => saveKey(true));
   window.YTBC_CH = { open };

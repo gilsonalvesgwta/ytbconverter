@@ -311,7 +311,7 @@ def plan_searches(p):
 def estimate_units(p):
     plan, pages = plan_searches(p)
     n = min(len(plan) * pages, MAX_SEARCHES)
-    return {"searches": n, "units": n * 100 + 10}
+    return {"searches": n, "units": n * 100 + 10, "same": find_same(p)}
 
 
 def search_channels(p, key=None):
@@ -435,17 +435,222 @@ def search_channels(p, key=None):
                     "monetization": monetization_estimate(subs, total_views, avg_dur), "ai": ai,
                     "videos": [{k: v[k] for k in v if k not in ("description", "tags")} for v in vids[:5]],
                 })
-    # pontuação: velocidade de views ponderada pela novidade do canal
     for ch in channels:
-        ch["score"] = round(math.log10(ch["views_per_day"] + 1) * 20 + math.log10(ch["top_views_per_hour"] + 1) * 10
-                            + max(0.0, 30 - ch["age_days"]) * 0.5, 1)
+        ch["score"] = _score(ch)
     channels.sort(key=lambda c: -c["score"])
     with _lock:
         used = _load()["quota"]["used"]
-    return {"channels": channels,
-            "stats": {"searches": len(plan) * pages, "videos": len(videos), "channels_checked": len(ch_ids),
-                      "found": len(channels), "units": counter["units"], "cached_calls": counter["cached"],
-                      "seconds": round(time.time() - t0, 1), "errors": errors[:3]},
+    out = {"channels": channels,
+           "stats": {"searches": len(plan) * pages, "videos": len(videos), "channels_checked": len(ch_ids),
+                     "found": len(channels), "units": counter["units"], "cached_calls": counter["cached"],
+                     "seconds": round(time.time() - t0, 1), "errors": errors[:3]},
+           "quota": {"used": used, "limit": DAILY_QUOTA}}
+    out["saved"] = save_search(p, out)
+    return out
+
+
+def _score(ch):
+    """Pontuação de oportunidade: velocidade de views ponderada pela novidade do canal."""
+    return round(math.log10((ch.get("views_per_day") or 0) + 1) * 20
+                 + math.log10((ch.get("top_views_per_hour") or 0) + 1) * 10
+                 + max(0.0, 30 - (ch.get("age_days") or 30)) * 0.5, 1)
+
+
+# ---------------------------------------------------------------- buscas salvas
+SEARCH_DIR = os.path.join(DATA_DIR, "searches")
+MAX_SAVED = int(os.environ.get("CHANNELS_MAX_SAVED", "200"))
+PARAM_KEYS = ("channel_days", "video_days", "min_views", "min_subs", "duration", "lang", "keywords", "depth", "region",
+              "ai_only")
+
+
+def _norm_params(p):
+    n = {k: p.get(k) for k in PARAM_KEYS}
+    n["keywords"] = sorted(k.strip().lower() for k in (p.get("keywords") or []) if k and k.strip())
+    n["ai_only"] = bool(p.get("ai_only", True))
+    n["depth"] = None if p.get("region") else (p.get("depth") or "normal")
+    for k in ("channel_days", "video_days", "min_views", "min_subs"):
+        n[k] = _int(n[k]) or 0
+    n["duration"] = n["duration"] or "any"
+    n["lang"] = n["lang"] or ""
+    n["region"] = n["region"] or None
+    return n
+
+
+def _label(n):
+    fmt = lambda v: f"{v / 1e6:g} mi" if v >= 1e6 else f"{v / 1e3:g} mil" if v >= 1e3 else str(v)
+    where = dict(REGIONS).get(n["region"], n["region"]) if n["region"] else DEPTHS.get(n["depth"], {}).get("label", "Normal")
+    parts = [where, f"canal ≤{n['channel_days']} d", f"vídeos ≤{n['video_days']} d", f"≥{fmt(n['min_views'])} views"]
+    if n["ai_only"]:
+        parts.append("só IA")
+    if n["duration"] != "any":
+        parts.append(DURATIONS[n["duration"]].split(" (")[0].lower())
+    if n["lang"]:
+        parts.append(dict(LANGS).get(n["lang"], n["lang"]))
+    if n["min_subs"]:
+        parts.append(f"≥{fmt(n['min_subs'])} inscritos")
+    if n["keywords"]:
+        parts.append(", ".join(n["keywords"]))
+    return " · ".join(parts)
+
+
+def _search_path(sid):
+    if not re.fullmatch(r"[0-9a-f]{12}", sid or ""):
+        raise ChannelError("Busca salva inválida.", 404)
+    return os.path.join(SEARCH_DIR, sid + ".json")
+
+
+def save_search(p, result):
+    os.makedirs(SEARCH_DIR, exist_ok=True)
+    n = _norm_params(p)
+    sid = os.urandom(6).hex()
+    now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    doc = {"id": sid, "created": now, "updated": now, "name": "", "label": _label(n), "params": n,
+           "signature": json.dumps(n, sort_keys=True), "channels": result["channels"], "stats": result["stats"]}
+    tmp = _search_path(sid) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False)
+    os.replace(tmp, _search_path(sid))
+    # guarda as mais recentes
+    files = sorted((os.path.join(SEARCH_DIR, f) for f in os.listdir(SEARCH_DIR) if f.endswith(".json")),
+                   key=os.path.getmtime, reverse=True)
+    for old in files[MAX_SAVED:]:
+        try:
+            os.unlink(old)
+        except OSError:
+            pass
+    return _summary(doc)
+
+
+def _summary(doc):
+    return {"id": doc["id"], "created": doc["created"], "updated": doc.get("updated", doc["created"]),
+            "name": doc.get("name") or "", "label": doc["label"], "found": len(doc["channels"]),
+            "units": (doc.get("stats") or {}).get("units", 0), "params": doc["params"],
+            "refresh_units": refresh_cost(doc)}
+
+
+def refresh_cost(doc):
+    n_ch = len(doc["channels"])
+    n_v = sum(len(c.get("videos") or []) for c in doc["channels"])
+    return math.ceil(n_ch / 50) + math.ceil(n_v / 50)
+
+
+def list_searches():
+    if not os.path.isdir(SEARCH_DIR):
+        return []
+    out = []
+    for f in os.listdir(SEARCH_DIR):
+        if f.endswith(".json"):
+            try:
+                with open(os.path.join(SEARCH_DIR, f), encoding="utf-8") as fh:
+                    out.append(_summary(json.load(fh)))
+            except (OSError, ValueError, KeyError):
+                continue
+    return sorted(out, key=lambda x: x["created"], reverse=True)
+
+
+def get_search(sid):
+    try:
+        with open(_search_path(sid), encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except OSError:
+        raise ChannelError("Busca salva não encontrada.", 404)
+    doc.pop("signature", None)
+    return {**doc, "refresh_units": refresh_cost(doc)}
+
+
+def _write_doc(doc):
+    tmp = _search_path(doc["id"]) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False)
+    os.replace(tmp, _search_path(doc["id"]))
+
+
+def rename_search(sid, name):
+    try:
+        with open(_search_path(sid), encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except OSError:
+        raise ChannelError("Busca salva não encontrada.", 404)
+    doc["name"] = str(name or "").strip()[:80]
+    _write_doc(doc)
+    return _summary(doc)
+
+
+def delete_search(sid):
+    try:
+        os.unlink(_search_path(sid))
+    except OSError:
+        raise ChannelError("Busca salva não encontrada.", 404)
+    return list_searches()
+
+
+def find_same(p, hours=24):
+    """Busca igual já feita nas últimas `hours` horas (para não gastar de novo)."""
+    sig = json.dumps(_norm_params(p), sort_keys=True)
+    limit = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours)
+    for s_ in list_searches():
+        if parse_iso(s_["created"]) >= limit and json.dumps(s_["params"], sort_keys=True) == sig:
+            return s_
+    return None
+
+
+def refresh_search(sid, key=None):
+    """Atualiza inscritos, views e métricas de uma busca salva (custa poucas unidades)."""
+    key = key or _load()["api_key"]
+    if not key:
+        raise ChannelError("Configure a chave da API do YouTube em Configurações da busca.", 400)
+    doc = get_search(sid)
+    doc.pop("refresh_units", None)
+    counter = {"units": 0, "calls": 0, "cached": 0, "lock": threading.Lock()}
+    now = dt.datetime.now(dt.timezone.utc)
+    ch_ids = [c["id"] for c in doc["channels"]]
+    v_ids = [v["id"] for c in doc["channels"] for v in c.get("videos") or []]
+    with _cache_lock:  # números frescos: ignora o cache
+        for k in [k for k in _cache if k.startswith(("channels?", "videos?"))]:
+            del _cache[k]
+    fresh_c, fresh_v = {}, {}
+    for i in range(0, len(ch_ids), 50):
+        for c in _api("channels", {"part": "statistics", "id": ",".join(ch_ids[i:i + 50]), "maxResults": 50}, key,
+                      counter).get("items") or []:
+            fresh_c[c["id"]] = c.get("statistics") or {}
+    for i in range(0, len(v_ids), 50):
+        for v in _api("videos", {"part": "statistics", "id": ",".join(v_ids[i:i + 50]), "maxResults": 50}, key,
+                      counter).get("items") or []:
+            fresh_v[v["id"]] = v.get("statistics") or {}
+    for ch in doc["channels"]:
+        st = fresh_c.get(ch["id"])
+        created = parse_iso(ch.get("created"))
+        if created:
+            ch["age_days"] = round(max(0.04, (now - created).total_seconds() / 86400), 1)
+        if st:
+            ch["subs"] = None if st.get("hiddenSubscriberCount") else _int(st.get("subscriberCount"))
+            ch["views"] = _int(st.get("viewCount")) or ch["views"]
+            ch["video_count"] = _int(st.get("videoCount")) or ch["video_count"]
+        for v in ch.get("videos") or []:
+            vs = fresh_v.get(v["id"])
+            pub = parse_iso(v.get("published"))
+            if pub:
+                v["age_hours"] = max(1.0, (now - pub).total_seconds() / 3600)
+            if vs:
+                v["views"] = _int(vs.get("viewCount")) or v["views"]
+                v["likes"] = _int(vs.get("likeCount"))
+            v["views_per_hour"] = int(v["views"] / v["age_hours"]) if v.get("age_hours") else 0
+        ch["videos"] = sorted(ch.get("videos") or [], key=lambda v: -v["views"])
+        top = ch["videos"][0] if ch["videos"] else None
+        ch["views_per_day"] = int(ch["views"] / max(1.0, ch["age_days"]))
+        ch["subs_per_day"] = int(ch["subs"] / max(1.0, ch["age_days"])) if ch["subs"] is not None else None
+        ch["top_views"] = top["views"] if top else 0
+        ch["top_views_per_hour"] = top["views_per_hour"] if top else 0
+        ch["monetization"] = monetization_estimate(ch["subs"], ch["views"], ch.get("avg_duration") or 0)
+        ch["score"] = _score(ch)
+    doc["channels"].sort(key=lambda c: -c["score"])
+    doc["updated"] = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    doc["signature"] = json.dumps(doc["params"], sort_keys=True)
+    _write_doc(doc)
+    with _lock:
+        used = _load()["quota"]["used"]
+    doc.pop("signature", None)
+    return {**doc, "refresh_units": refresh_cost(doc), "units_spent": counter["units"],
             "quota": {"used": used, "limit": DAILY_QUOTA}}
 
 

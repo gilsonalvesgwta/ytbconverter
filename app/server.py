@@ -623,6 +623,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/channels/favorites":
                 self._require_auth(params)
                 return self._json(200, {"ok": True, "favorites": chn.list_favorites()})
+            if path == "/api/channels/searches":
+                self._require_auth(params)
+                return self._json(200, {"ok": True, "searches": chn.list_searches()})
+            m = re.fullmatch(r"/api/channels/searches/([0-9a-f]{12})", path)
+            if m:
+                self._require_auth(params)
+                return self._json(200, {"ok": True, "search": chn.get_search(m.group(1))})
             if path == "/api/transcribe/settings":
                 self._require_auth(params)
                 return self._json(200, {"ok": True, **tr.public_settings()})
@@ -682,6 +689,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(200, {"ok": True, **chn.ad_check(str(b.get("video_id") or ""), _cookie_header())})
                 if path == "/api/channels/favorites":
                     return self._json(200, {"ok": True, "favorites": chn.add_favorite(b)})
+                m = re.fullmatch(r"/api/channels/searches/([0-9a-f]{12})/refresh", path)
+                if m:
+                    return self._json(200, {"ok": True, "search": chn.refresh_search(m.group(1))})
+                m = re.fullmatch(r"/api/channels/searches/([0-9a-f]{12})", path)
+                if m:
+                    return self._json(200, {"ok": True, "search": chn.rename_search(m.group(1), b.get("name"))})
                 raise UserError("Rota não encontrada.", 404)
             if path == "/api/youtube/transcript":
                 self._require_auth()
@@ -756,6 +769,14 @@ class Handler(BaseHTTPRequestHandler):
             if not self._authorized():
                 return self._error(401, "Senha de acesso necessária.")
             return self._json(200, {"ok": True, "favorites": chn.remove_favorite(m.group(1))})
+        m = re.fullmatch(r"/api/channels/searches/([0-9a-f]{12})", path)
+        if m:
+            if not self._authorized():
+                return self._error(401, "Senha de acesso necessária.")
+            try:
+                return self._json(200, {"ok": True, "searches": chn.delete_search(m.group(1))})
+            except chn.ChannelError as exc:
+                return self._error(exc.status, str(exc))
         if path != "/api/cookies":
             return self._error(404, "Rota não encontrada.")
         if not ACCESS_PASSWORD or not self._authorized():

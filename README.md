@@ -18,7 +18,8 @@ Encontra canais de **música feita com IA** (Suno, Udio…) **novos** (criados h
 - **Resultado:** cada canal com pontuação de oportunidade, inscritos, views totais, **views por dia**, vídeos, país, idade, vídeo de destaque (views, views por hora, duração) e outros vídeos recentes. Ordena por oportunidade, views/dia, mais novos, vídeo mais visto, mais rápido ou inscritos.
 - **Monetização:** o YouTube não divulga quais canais são monetizados. O sistema dá (1) uma **estimativa de elegibilidade** pelas regras do Programa de Parcerias (1.000 inscritos + 4.000 h assistidas estimadas, ou 10 mi de views em Shorts) e (2) o botão **Verificar anúncios**, que confere se o vídeo exibe anúncios (forte indício de canal monetizado).
 - **Favoritos** (★, salvos no servidor), **Exportar CSV**, e atalhos para **Transcrição** (copia a letra/legenda do vídeo) e **Baixar trecho** do vídeo de destaque.
-- Buscas repetidas em até 6 horas vêm do cache e não gastam cota.
+- **Buscas salvas:** toda busca fica guardada no servidor (até 200, com filtros, data e todos os canais). Em **🗂 Buscas salvas** você abre qualquer uma na hora, **sem gastar unidades**, renomeia ou exclui. **↻ Atualizar números** atualiza inscritos, views e métricas de uma busca salva por poucas unidades (1 a cada 50 canais + 1 a cada 50 vídeos), sem refazer a pesquisa. Se você for repetir uma busca feita nas últimas 24 h, aparece o aviso para abrir a salva.
+- Buscas repetidas em até 6 horas também vêm do cache e não gastam cota.
 
 **Chave gratuita da API do YouTube (uma vez):**
 1. Acesse console.cloud.google.com e entre com sua conta Google.

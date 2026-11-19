@@ -246,6 +246,59 @@ class TestChannelFinder(Base):
         q = [q for p, q in FakeYT.log if p == "/search"][0]
         self.assertEqual(q["q"], "soft rock ai|soft rock suno|soft rock udio")
 
+    def test_9_saved_searches(self):
+        """Toda busca fica salva: abrir não gasta nada; atualizar números custa poucas unidades."""
+        self.post("/api/channels/settings", {"api_key": KEY})
+        params = {"depth": "rapida", "channel_days": 30, "min_views": 100000, "keywords": ["Soft Rock"]}
+        st, d = self.post("/api/channels/search", params)
+        self.assertEqual(st, 200, d)
+        sv = d["saved"]
+        self.assertRegex(sv["id"], r"^[0-9a-f]{12}$")
+        self.assertEqual(sv["found"], len(d["channels"]))
+        self.assertIn("Rápida", sv["label"])
+        self.assertIn("só IA", sv["label"])
+        self.assertIn("soft rock", sv["label"])
+        # lista e abre sem chamar a API
+        st, _, raw = base.request(self.base, "/api/channels/searches", headers=AUTH)
+        self.assertIn(sv["id"], [x["id"] for x in json.loads(raw)["searches"]])
+        FakeYT.log.clear()
+        st, _, raw = base.request(self.base, f"/api/channels/searches/{sv['id']}", headers=AUTH)
+        doc = json.loads(raw)["search"]
+        self.assertEqual([c["id"] for c in doc["channels"]], [c["id"] for c in d["channels"]])
+        self.assertEqual(FakeYT.log, [])                                                   # 0 unidades
+        # mesma busca (palavras em outra caixa/ordem) é reconhecida como repetida
+        st, e = self.post("/api/channels/estimate", {**params, "keywords": ["soft rock "]})
+        self.assertEqual(e["same"]["id"], sv["id"])
+        st, e = self.post("/api/channels/estimate", {**params, "channel_days": 60})
+        self.assertIsNone(e["same"])
+        # renomear
+        st, r = self.post(f"/api/channels/searches/{sv['id']}", {"name": "Soft rock IA — novembro"})
+        self.assertEqual(r["search"]["name"], "Soft rock IA — novembro")
+        # atualizar números: canal cresceu
+        old = CHANNELS["A"]["views"]
+        CHANNELS["A"]["views"] = "4500000"
+        try:
+            FakeYT.log.clear()
+            st, r = self.post(f"/api/channels/searches/{sv['id']}/refresh", {})
+            self.assertEqual(st, 200, r)
+            ch = next(c for c in r["search"]["channels"] if c["title"] == "Nova Slow Rock")
+            self.assertEqual(ch["views"], 4500000)
+            self.assertAlmostEqual(ch["views_per_day"], 900000, delta=200)
+            self.assertEqual(r["search"]["units_spent"], 2)                                          # 1 channels + 1 videos
+            self.assertEqual({p for p, _ in FakeYT.log}, {"/channels", "/videos"})
+            self.assertTrue(all(q["part"] == "statistics" for _, q in FakeYT.log))
+            self.assertEqual(r["search"]["name"], "Soft rock IA — novembro")
+        finally:
+            CHANNELS["A"]["views"] = old
+        st, _, raw = base.request(self.base, f"/api/channels/searches/{sv['id']}", headers=AUTH)
+        self.assertEqual(next(c for c in json.loads(raw)["search"]["channels"] if c["title"] == "Nova Slow Rock")["views"], 4500000)
+        # excluir
+        st, _, raw = base.request(self.base, f"/api/channels/searches/{sv['id']}", method="DELETE", headers=AUTH)
+        self.assertNotIn(sv["id"], [x["id"] for x in json.loads(raw)["searches"]])
+        self.assertEqual(base.request(self.base, f"/api/channels/searches/{sv['id']}", headers=AUTH)[0], 404)
+        self.assertEqual(base.request(self.base, "/api/channels/searches/zzz", headers=AUTH)[0], 404)
+        self.assertEqual(base.request(self.base, "/api/channels/searches")[0], 401)
+
     def test_5_api_errors(self):
         for key, text in [("AIzaSyBAD_xxxxxxxxxxxxxxxxxxxxxxxxxxxx", "inválida"),
                           ("AIzaSyQUOTA_xxxxxxxxxxxxxxxxxxxxxxxxxx", "cota diária"),
