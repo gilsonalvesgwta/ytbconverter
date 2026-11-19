@@ -131,40 +131,64 @@
   .ch-toolbar .sum{flex:1;color:var(--muted);font-size:13.5px;min-width:220px} .ch-toolbar .sum b{color:var(--text)}
   .ch-toolbar select,.ch-toolbar input{width:auto;padding:9px 11px;font-size:13.5px}
   .ch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
-  .chc{background:linear-gradient(180deg,var(--navy-2),#081d36);border:1px solid var(--line);border-radius:var(--radius);padding:16px;
-    display:flex;flex-direction:column;gap:12px;transition:border-color .15s,transform .15s}
-  .chc:hover{border-color:#2a5a90}
-  .chc-top{display:flex;gap:12px;align-items:center}
-  .chc-top img{width:46px;height:46px;border-radius:50%;background:#0c2746;flex:none;object-fit:cover}
-  .chc-top .nm{font-weight:700;font-size:15px;color:var(--text);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .chc-top .nm:hover{color:var(--orange)}
-  .chc-top .meta{color:var(--muted);font-size:12.5px;margin-top:2px}
-  .chc-top .rank{margin-left:auto;text-align:right;flex:none}
-  .chc-top .rank b{display:block;font-size:20px;color:var(--orange);line-height:1}
-  .chc-top .rank span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-  .star{background:transparent;border:1px solid var(--line);color:var(--muted);width:34px;height:34px;border-radius:9px;font-size:16px;flex:none}
-  .star.on{color:#ffc542;border-color:#ffc542}
+  .chc{position:relative;min-width:0;overflow:hidden;display:flex;flex-direction:column;gap:14px;padding:18px;
+    background:radial-gradient(120% 60% at 100% 0%,rgba(255,102,0,.07),transparent 55%),linear-gradient(180deg,#0b2443,#071b33);
+    border:1px solid #1b3d66;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.03);
+    transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+  .chc:hover{transform:translateY(-2px);border-color:#2c5f97;box-shadow:0 16px 40px rgba(0,0,0,.38)}
+  .chc *{min-width:0}
+  .chc-head{display:grid;grid-template-columns:48px 1fr auto auto;gap:12px;align-items:center;margin:0}
+  .chc-head .av{width:48px;height:48px;border-radius:50%;object-fit:cover;background:#0c2746;box-shadow:0 0 0 2px #1b3d66}
+  .chc-head .nm{display:block;font-weight:700;font-size:15.5px;color:var(--text);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chc-head .nm:hover{color:var(--orange)}
+  .chc-head .handle{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .score{text-align:center;padding:6px 10px;border-radius:12px;background:rgba(255,102,0,.1);border:1px solid rgba(255,102,0,.35)}
+  .score b{display:block;font-size:19px;line-height:1;color:var(--orange)}
+  .score span{display:block;font-size:9.5px;color:#ffb27f;text-transform:uppercase;letter-spacing:.6px;margin-top:3px}
+  .star{background:transparent;border:1px solid var(--line);color:var(--muted);width:36px;height:36px;border-radius:10px;font-size:16px;
+    display:grid;place-items:center;transition:all .15s}
+  .star:hover{color:#ffc542;border-color:#ffc542}
+  .star.on{color:#ffc542;border-color:#ffc542;background:rgba(255,197,66,.1)}
+  .tags{display:flex;gap:6px;flex-wrap:wrap}
+  .tg{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#b8c9de;background:#0a2240;border:1px solid #1b3d66;
+    border-radius:999px;padding:4px 10px;white-space:nowrap}
   .badges{display:flex;gap:6px;flex-wrap:wrap}
-  .bdg{font-size:11.5px;border-radius:999px;padding:3px 9px;border:1px solid var(--line);color:var(--muted)}
-  .bdg.ok{background:rgba(46,204,143,.12);border-color:rgba(46,204,143,.45);color:var(--ok)}
+  .bdg{font-size:11.5px;font-weight:600;border-radius:999px;padding:4px 10px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .bdg.ok{background:rgba(46,204,143,.12);border-color:rgba(46,204,143,.45);color:#43dea0}
   .bdg.warn{background:rgba(255,197,66,.1);border-color:rgba(255,197,66,.45);color:#ffc542}
   .bdg.hot{background:rgba(255,102,0,.13);border-color:rgba(255,102,0,.5);color:#ff9a57}
-  .stats4{display:grid;grid-template-columns:repeat(4,1fr);background:#061a30;border:1px solid var(--line);border-radius:10px}
-  .stats4 div{padding:9px 8px;text-align:center;border-right:1px solid var(--line)} .stats4 div:last-child{border-right:0}
-  .stats4 b{display:block;font-size:15px} .stats4 span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-  .topv{display:flex;gap:10px;text-decoration:none;color:var(--text);align-items:flex-start}
-  .topv .th{position:relative;flex:none;width:132px;height:74px;border-radius:8px;overflow:hidden;background:#0c2746}
-  .topv .th img{width:100%;height:100%;object-fit:cover}
-  .topv .th em{position:absolute;right:4px;bottom:4px;background:rgba(0,0,0,.8);color:#fff;font-style:normal;font-size:11px;padding:1px 5px;border-radius:4px}
-  .topv .tt{font-size:13.5px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .topv .tm{font-size:12px;color:var(--muted);margin-top:4px}
-  .topv:hover .tt{color:var(--orange)}
-  .morev{font-size:12.5px;color:var(--muted);display:grid;gap:4px}
-  .morev a{color:var(--muted);text-decoration:none;display:flex;justify-content:space-between;gap:8px}
-  .morev a span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .morev a:hover{color:var(--text)}
-  .chc-act{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
-  .chc-act .ghost{padding:7px 10px;font-size:12.5px}
+  .why{font-size:12px;color:#8fa6c2;line-height:1.45;background:#081e38;border-left:2px solid #3b6aa3;padding:7px 10px;border-radius:0 8px 8px 0}
+  .stats4{display:grid;grid-template-columns:repeat(4,1fr);background:#061a30;border:1px solid #1b3d66;border-radius:12px;overflow:hidden}
+  .stats4 div{padding:10px 6px;text-align:center;border-right:1px solid #1b3d66}
+  .stats4 div:last-child{border-right:0}
+  .stats4 b{display:block;font-size:15.5px;font-weight:700;white-space:nowrap}
+  .stats4 span{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:3px;white-space:nowrap}
+  .hero{display:block;text-decoration:none;color:var(--text);border-radius:12px;overflow:hidden;background:#061a30;border:1px solid #1b3d66;transition:border-color .15s}
+  .hero:hover{border-color:var(--orange)}
+  .hero-th{position:relative;aspect-ratio:16/9;background:#0c2746}
+  .hero-th img{width:100%;height:100%;object-fit:cover;display:block}
+  .hero-th .dur{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.82);color:#fff;font-size:12px;font-weight:600;padding:2px 7px;border-radius:6px}
+  .hero-th .vw{position:absolute;left:8px;bottom:8px;background:rgba(5,22,40,.88);color:#fff;font-size:12.5px;font-weight:700;padding:3px 9px;border-radius:6px;border:1px solid rgba(255,102,0,.6)}
+  .hero-th .lbl{position:absolute;left:8px;top:8px;background:var(--orange);color:#fff;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;letter-spacing:.4px;text-transform:uppercase}
+  .hero-b{padding:10px 12px 12px}
+  .hero-t{font-size:14px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .hero:hover .hero-t{color:var(--orange)}
+  .hero-m{font-size:12px;color:var(--muted);margin-top:5px}
+  .vlist{display:grid;gap:6px}
+  .vlist-h{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .vrow{display:grid;grid-template-columns:64px 1fr auto;gap:10px;align-items:center;text-decoration:none;color:var(--text);
+    padding:5px;border-radius:9px;transition:background .15s}
+  .vrow:hover{background:#0c2746}
+  .vrow img{width:64px;height:36px;object-fit:cover;border-radius:5px;background:#0c2746;display:block}
+  .vrow .vt{font-size:12.5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .vrow .vm{text-align:right;font-size:11.5px;color:var(--muted);white-space:nowrap;line-height:1.35}
+  .vrow .vm b{color:var(--text);font-weight:600}
+  .chc-act{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:auto;text-align:initial;color:inherit;font-size:inherit}
+  .act{display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 8px;font-size:12.5px;font-weight:600;color:#cfdcec;
+    background:#0a2240;border:1px solid #1b3d66;border-radius:10px;text-decoration:none;cursor:pointer;white-space:nowrap;transition:all .15s}
+  .act:hover{border-color:var(--orange);color:#fff;background:rgba(255,102,0,.1)}
+  .act:disabled{opacity:.6;cursor:wait}
+  .act svg{flex:none}
   .adres{font-size:12.5px;border-radius:8px;padding:7px 9px;display:none}
   .adres.show{display:block}
   .empty{text-align:center;color:var(--muted);padding:36px 12px;border:1px dashed var(--line);border-radius:var(--radius)}
@@ -1272,39 +1296,59 @@
   const AI = { declarada: ["ok", "🤖 IA declarada"], forte: ["hot", "🤖 Música de IA"], indicio: ["warn", "🤖 Indício de IA"] };
   const aiBadge = (ai) => ai && AI[ai.level] ? `<span class="bdg ${AI[ai.level][0]}" title="${esc((ai.reasons || []).join(" · "))}">${AI[ai.level][1]}</span>` : "";
 
+  const region = (() => { try { const d = new Intl.DisplayNames(["pt-BR"], { type: "region" }); return (cc) => { try { return d.of(cc); } catch { return cc; } }; } catch { return (cc) => cc; } })();
+  const ICON = {
+    ext: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 14v6H4V4h6"/></svg>',
+    ads: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.6-1-1.7-1.5-3-1.5-1.7 0-3 .9-3 2.2 0 3.1 6 1.6 6 4.6 0 1.3-1.3 2.2-3 2.2-1.4 0-2.5-.6-3-1.6"/><path d="M12 6v2M12 16v2"/></svg>',
+    tr: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
+    clip: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+  };
   function card(c) {
     const mon = MON[(c.monetization || {}).status] || MON.desconhecido;
-    const v = (c.videos || [])[0];
+    const vids = c.videos || [], v = vids[0];
     const created = c.age_days != null ? ago(c.age_days) : (c.created ? new Date(c.created).toLocaleDateString("pt-BR") : "");
-    const hot = c.age_days != null && c.age_days <= 7 ? `<span class="bdg hot">🔥 canal de ${Math.max(1, Math.round(c.age_days))} dia${Math.round(c.age_days) > 1 ? "s" : ""}</span>` : "";
+    const days = c.age_days != null ? Math.max(1, Math.round(c.age_days)) : null;
+    const hot = days != null && days <= 7 ? `<span class="bdg hot">🔥 canal de ${days} dia${days > 1 ? "s" : ""}</span>` : "";
     const wh = c.monetization && c.monetization.watch_hours != null ? ` title="Estimativa: ~${full(c.monetization.watch_hours)} horas assistidas (regra: 1.000 inscritos + 4.000 h, ou 10 mi de views em Shorts)"` : "";
-    return `<div class="chc" data-id="${esc(c.id)}">
-      <div class="chc-top">
-        <img src="${esc(c.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">
-        <div style="min-width:0;flex:1"><a class="nm" href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title)}</a>
-          <div class="meta">${esc(c.handle || "")}${c.country ? " · " + flag(c.country) : ""}${created ? " · criado " + created : ""}</div></div>
-        ${c.score != null ? `<div class="rank"><b>${Math.round(c.score)}</b><span>pontos</span></div>` : ""}
-        <button type="button" class="star${isFav(c.id) ? " on" : ""}" data-act="fav" title="Favoritar">★</button>
+    const watch = (x) => "https://www.youtube.com/watch?v=" + encodeURIComponent(x.id);
+    return `<article class="chc" data-id="${esc(c.id)}">
+      <header class="chc-head">
+        <img class="av" src="${esc(c.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+        <div><a class="nm" href="${esc(c.url)}" target="_blank" rel="noopener" title="${esc(c.title)}">${esc(c.title)}</a>
+          <div class="handle">${esc(c.handle || "")}</div></div>
+        ${c.score != null ? `<div class="score" title="Pontuação de oportunidade: views por dia, velocidade do vídeo principal e novidade do canal"><b>${Math.round(c.score)}</b><span>pontos</span></div>` : "<div></div>"}
+        <button type="button" class="star${isFav(c.id) ? " on" : ""}" data-act="fav" title="${isFav(c.id) ? "Remover dos favoritos" : "Favoritar"}">★</button>
+      </header>
+      <div class="tags">
+        ${c.country ? `<span class="tg">📍 ${esc(region(c.country))}</span>` : ""}
+        ${created ? `<span class="tg">🗓 criado ${esc(created)}</span>` : ""}
+        ${c.avg_duration >= 1200 ? '<span class="tg">🎧 playlists longas</span>' : ""}
+        ${c.monetization && c.monetization.shorts ? '<span class="tg">📱 Shorts</span>' : ""}
       </div>
-      <div class="badges">${aiBadge(c.ai)}<span class="bdg ${mon[0]}"${wh}>${mon[1]}</span>${hot}${c.monetization && c.monetization.shorts ? '<span class="bdg">Shorts</span>' : ""}${c.avg_duration >= 1200 ? '<span class="bdg">Playlists longas</span>' : ""}</div>
-      ${c.ai && c.ai.reasons && c.ai.reasons.length ? `<div class="hint" style="margin-top:-4px">🤖 ${esc(c.ai.reasons.join(" · "))}</div>` : ""}
+      <div class="badges">${aiBadge(c.ai)}<span class="bdg ${mon[0]}"${wh}>${mon[1]}</span>${hot}</div>
+      ${c.ai && c.ai.reasons && c.ai.reasons.length ? `<div class="why">🤖 ${esc(c.ai.reasons.join(" · "))}</div>` : ""}
       <div class="stats4">
         <div><b>${num(c.subs)}</b><span>inscritos</span></div><div><b>${num(c.views)}</b><span>views</span></div>
         <div><b>${num(c.views_per_day)}</b><span>views/dia</span></div><div><b>${num(c.video_count)}</b><span>vídeos</span></div>
       </div>
-      ${v ? `<a class="topv" href="https://www.youtube.com/watch?v=${esc(v.id)}" target="_blank" rel="noopener">
-        <div class="th"><img src="${esc(v.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer"><em>${dur(v.duration)}</em></div>
-        <div style="min-width:0"><div class="tt">${esc(v.title)}</div>
-          <div class="tm"><b style="color:var(--text)">${num(v.views)}</b> views · ${hrs(v.age_hours)} · ${num(v.views_per_hour)}/hora</div></div></a>` : ""}
-      ${(c.videos || []).length > 1 ? `<div class="morev">${c.videos.slice(1, 4).map(x => `<a href="https://www.youtube.com/watch?v=${esc(x.id)}" target="_blank" rel="noopener"><span>${esc(x.title)}</span><span>${num(x.views)} · ${hrs(x.age_hours)}</span></a>`).join("")}</div>` : ""}
-      <div class="chc-act">
-        <a class="ghost" href="${esc(c.url)}/videos" target="_blank" rel="noopener" style="text-decoration:none">Abrir canal ↗</a>
-        ${v ? `<button type="button" class="ghost" data-act="ads" data-v="${esc(v.id)}">Verificar anúncios</button>
-        <button type="button" class="ghost" data-act="tr" data-v="${esc(v.id)}">Transcrição</button>
-        <button type="button" class="ghost" data-act="clip" data-v="${esc(v.id)}">Baixar trecho</button>` : ""}
-      </div>
+      ${v ? `<a class="hero" href="${watch(v)}" target="_blank" rel="noopener" title="${esc(v.title)}">
+        <div class="hero-th"><img src="${esc(v.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+          <span class="lbl">Destaque</span><span class="vw">${num(v.views)} views</span><span class="dur">${dur(v.duration)}</span></div>
+        <div class="hero-b"><div class="hero-t">${esc(v.title)}</div>
+          <div class="hero-m">Publicado ${hrs(v.age_hours)} · <b style="color:var(--text)">${num(v.views_per_hour)}</b> views/hora</div></div></a>` : ""}
+      ${vids.length > 1 ? `<div class="vlist"><div class="vlist-h">Outros vídeos recentes</div>${vids.slice(1, 4).map(x => `
+        <a class="vrow" href="${watch(x)}" target="_blank" rel="noopener" title="${esc(x.title)}">
+          <img src="${esc(x.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+          <span class="vt">${esc(x.title)}</span>
+          <span class="vm"><b>${num(x.views)}</b><br>${hrs(x.age_hours)}</span></a>`).join("")}</div>` : ""}
+      <footer class="chc-act">
+        <a class="act" href="${esc(c.url)}/videos" target="_blank" rel="noopener">${ICON.ext} Abrir canal</a>
+        ${v ? `<button type="button" class="act" data-act="ads" data-v="${esc(v.id)}">${ICON.ads} Verificar anúncios</button>
+        <button type="button" class="act" data-act="tr" data-v="${esc(v.id)}">${ICON.tr} Transcrição</button>
+        <button type="button" class="act" data-act="clip" data-v="${esc(v.id)}">${ICON.clip} Baixar trecho</button>` : ""}
+      </footer>
       <div class="adres"></div>
-    </div>`;
+    </article>`;
   }
   function renderCur() {
     if (!cur || showFavs) { $("ch-cur").hidden = true; return; }

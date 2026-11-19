@@ -57,6 +57,10 @@ VIDEOS = {  # id(11) -> canal, views, duração, dias
 }
 
 
+TITLES = {}      # títulos opcionais (teste visual)
+THUMBS = {}      # caminho -> bytes de imagem (teste visual)
+
+
 class FakeYT(http.server.BaseHTTPRequestHandler):
     log = []
 
@@ -74,6 +78,13 @@ class FakeYT(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
         q = {k: v[-1] for k, v in urllib.parse.parse_qs(u.query).items()}
+        if u.path in THUMBS:
+            body = THUMBS[u.path]
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
         if u.path == "/watch":
             vid = q.get("v")
             if vid == "vidA1xxxxxx":
@@ -110,9 +121,9 @@ class FakeYT(http.server.BaseHTTPRequestHandler):
                 ch, views, dur, days = VIDEOS[i]
                 desc, tags, syn = AI_META.get(i, ("", [], False))
                 items.append({"id": i, "status": {"containsSyntheticMedia": syn} if syn else {},
-                              "snippet": {"title": f"Vídeo {i}", "channelId": cid(ch), "publishedAt": iso(days),
+                              "snippet": {"title": TITLES.get(i, f"Vídeo {i}"), "channelId": cid(ch), "publishedAt": iso(days),
                                           "description": desc, "tags": tags,
-                                                    "thumbnails": {"medium": {"url": f"https://i.ytimg.com/{i}.jpg"}}},
+                                                    "thumbnails": {"medium": {"url": THUMBS.get("base", "https://i.ytimg.com") + f"/thumb/{i}.jpg"}}},
                               "statistics": {"viewCount": str(views), "likeCount": "100"},
                               "contentDetails": {"duration": dur}})
             return self.send(200, {"items": items})
@@ -128,7 +139,7 @@ class FakeYT(http.server.BaseHTTPRequestHandler):
                     st["subscriberCount"] = d["subs"]
                 items.append({"id": c, "snippet": {"title": d["title"], "publishedAt": iso(d["created"]), "description": d.get("desc", ""),
                                                    "country": d["country"], "customUrl": "@" + d["title"].replace(" ", "").lower(),
-                                                   "thumbnails": {"default": {"url": f"https://yt3/{ch}.jpg"}}},
+                                                   "thumbnails": {"default": {"url": THUMBS.get("base", "https://yt3") + f"/thumb/av{ch}.jpg"}}},
                               "statistics": st})
             return self.send(200, {"items": items})
         self.send(404, {"error": {"message": "nope"}})
