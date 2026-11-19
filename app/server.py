@@ -20,6 +20,7 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import channels as chn
 import transcribe as tr
 
 # ---------------------------------------------------------------- config
@@ -155,6 +156,20 @@ def friendly_ytdlp_error(exc):
     if "unsupported url" in low or "incomplete youtube id" in low:
         return UserError("Não reconheci esse link como um vídeo do YouTube.", 422)
     return UserError("Não consegui ler o vídeo no YouTube. Detalhe: " + msg.splitlines()[-1][:300], 502)
+
+
+def _cookie_header():
+    """Cookies do youtube.com (do cookies.txt enviado) no formato de cabeçalho HTTP."""
+    try:
+        with open(COOKIES_FILE, encoding="utf-8") as fh:
+            pairs = []
+            for line in fh:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 7 and "youtube.com" in parts[0]:
+                    pairs.append(f"{parts[5]}={parts[6]}")
+        return "; ".join(pairs)
+    except OSError:
+        return ""
 
 
 def _cookie_copy():
@@ -602,6 +617,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._info(params)
             if path == "/api/download":
                 return self._download(params)
+            if path == "/api/channels/settings":
+                self._require_auth(params)
+                return self._json(200, {"ok": True, **chn.public_settings()})
+            if path == "/api/channels/favorites":
+                self._require_auth(params)
+                return self._json(200, {"ok": True, "favorites": chn.list_favorites()})
             if path == "/api/transcribe/settings":
                 self._require_auth(params)
                 return self._json(200, {"ok": True, **tr.public_settings()})
@@ -612,7 +633,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise UserError("Transcrição não encontrada (o servidor pode ter reiniciado).", 404)
                 return self._json(200, {"ok": True, "job": job})
             self._error(404, "Página não encontrada.")
-        except (UserError, tr.TranscribeError) as exc:
+        except (UserError, tr.TranscribeError, chn.ChannelError) as exc:
             self._error(exc.status, str(exc))
         except Exception:
             log.exception("erro inesperado")
@@ -648,6 +669,20 @@ class Handler(BaseHTTPRequestHandler):
                 if not job:
                     raise UserError("Transcrição não encontrada.", 404)
                 return self._json(200, {"ok": True, "job": job})
+            if path.startswith("/api/channels/"):
+                self._require_auth()
+                b = self._json_body()
+                if path == "/api/channels/settings":
+                    return self._json(200, {"ok": True, **chn.update_settings(b, bool(ACCESS_PASSWORD))})
+                if path == "/api/channels/estimate":
+                    return self._json(200, {"ok": True, **chn.estimate_units(b)})
+                if path == "/api/channels/search":
+                    return self._json(200, {"ok": True, **chn.search_channels(b)})
+                if path == "/api/channels/adcheck":
+                    return self._json(200, {"ok": True, **chn.ad_check(str(b.get("video_id") or ""), _cookie_header())})
+                if path == "/api/channels/favorites":
+                    return self._json(200, {"ok": True, "favorites": chn.add_favorite(b)})
+                raise UserError("Rota não encontrada.", 404)
             if path == "/api/youtube/transcript":
                 self._require_auth()
                 b = self._json_body()
@@ -664,7 +699,7 @@ class Handler(BaseHTTPRequestHandler):
                                       b.get("format") or "file", b.get("duration"))
                 return self._json(200, {"ok": True, **out})
             self._error(404, "Rota não encontrada.")
-        except (UserError, tr.TranscribeError) as exc:
+        except (UserError, tr.TranscribeError, chn.ChannelError) as exc:
             self._error(exc.status, str(exc))
         except Exception:
             log.exception("erro inesperado")
@@ -680,7 +715,7 @@ class Handler(BaseHTTPRequestHandler):
             self._require_auth(params)
             length = int(self.headers.get("Content-Length") or 0)
             return self._json(200, {"ok": True, **tr.upload_chunk(m.group(1), params.get("offset", 0), self.rfile, length)})
-        except (UserError, tr.TranscribeError) as exc:
+        except (UserError, tr.TranscribeError, chn.ChannelError) as exc:
             self.close_connection = True
             self._error(exc.status, str(exc))
         except Exception:
@@ -716,6 +751,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         path = urllib.parse.urlparse(self.path).path
+        m = re.fullmatch(r"/api/channels/favorites/(UC[A-Za-z0-9_\-]{20,24})", path)
+        if m:
+            if not self._authorized():
+                return self._error(401, "Senha de acesso necessária.")
+            return self._json(200, {"ok": True, "favorites": chn.remove_favorite(m.group(1))})
         if path != "/api/cookies":
             return self._error(404, "Rota não encontrada.")
         if not ACCESS_PASSWORD or not self._authorized():

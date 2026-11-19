@@ -8,6 +8,27 @@ Endereço: **https://ytbconversor.wtatech.com.br**
 - A opção "Manter estas configurações" guarda suas escolhas no navegador. Desmarcada, o sistema sempre volta ao padrão.
 - A pasta de destino personalizada funciona no **Chrome ou Edge no computador** (o navegador pede permissão uma vez). Nos outros navegadores, o arquivo vai para a pasta de downloads do navegador.
 
+## Achar canais (aba "Achar canais")
+
+Encontra canais de música **novos** (criados há até 7, 14, 30, 60, 90 dias ou 6 meses) com vídeos **recentes** e **muitas visualizações**, em qualquer lugar do mundo, usando a API oficial do YouTube.
+
+- **Filtros:** idade do canal, período dos vídeos, visualizações mínimas, duração (playlists longas, médios, curtos), idioma, mínimo de inscritos, gêneros prontos (playlist, lofi, worship, louvor, soft rock, sad songs…) e palavras-chave livres.
+- **Onde procurar:** varredura **Rápida** (mundo, ~200 unidades), **Normal** (8 regiões, ~800) ou **Profunda** (20 regiões, 2 páginas, ~4.000), ou um país específico.
+- **Resultado:** cada canal com pontuação de oportunidade, inscritos, views totais, **views por dia**, vídeos, país, idade, vídeo de destaque (views, views por hora, duração) e outros vídeos recentes. Ordena por oportunidade, views/dia, mais novos, vídeo mais visto, mais rápido ou inscritos.
+- **Monetização:** o YouTube não divulga quais canais são monetizados. O sistema dá (1) uma **estimativa de elegibilidade** pelas regras do Programa de Parcerias (1.000 inscritos + 4.000 h assistidas estimadas, ou 10 mi de views em Shorts) e (2) o botão **Verificar anúncios**, que confere se o vídeo exibe anúncios (forte indício de canal monetizado).
+- **Favoritos** (★, salvos no servidor), **Exportar CSV**, e atalhos para **Transcrição** (copia a letra/legenda do vídeo) e **Baixar trecho** do vídeo de destaque.
+- Buscas repetidas em até 6 horas vêm do cache e não gastam cota.
+
+**Chave gratuita da API do YouTube (uma vez):**
+1. Acesse console.cloud.google.com e entre com sua conta Google.
+2. Crie um projeto (ex.: YTB Conversor).
+3. Menu ☰ → APIs e serviços → Biblioteca → "YouTube Data API v3" → Ativar.
+4. APIs e serviços → Credenciais → Criar credenciais → Chave de API → copie (começa com AIza).
+5. Recomendado: na chave, Restrições de API → só "YouTube Data API v3" (sem restrição de site/IP).
+6. No YTB Conversor: Achar canais → Configurações da busca → cole e Salvar.
+
+A cota gratuita é de 10.000 unidades por dia (renova por volta das 5h no Brasil). A tela mostra quanto cada busca vai gastar antes de buscar e quanto já foi usado.
+
 ## Transcrição (aba "Transcrever")
 
 **Link do YouTube → transcrição pronta (segundos):** cole o link: a transcrição aparece sozinha, sem precisar clicar em nada. Depois é um clique para **Copiar transcrição** ou **Baixar .txt**. O sistema copia a transcrição que o próprio YouTube já tem (legenda do criador, ou a automática do YouTube), sem baixar nem transcrever nada, como as extensões do Chrome. Padrão: idioma original do áudio, exatamente como o YouTube disponibiliza, com marcações de tempo [mm:ss]. Opcional: tradução automática do YouTube (Português, Inglês ou Espanhol) e desmarcar as marcações de tempo. Se o vídeo não tiver legenda, aparece o botão **Transcrever o áudio (mais demorado)**.
@@ -130,9 +151,10 @@ Transcrição pela API: `POST /api/transcribe/start` (`name`, `size`, opcional `
 ## Para quem mantém o código
 
 - `app/server.py`: servidor (só biblioteca padrão do Python + yt-dlp + ffmpeg). Corta direto do link do áudio com ffmpeg; se falhar, usa o próprio yt-dlp como plano B.
+- `app/channels.py`: busca de canais (API do YouTube), métricas, estimativa de monetização, cota, cache, favoritos.
 - `app/transcribe.py`: transcrição (faster-whisper local ou OpenAI), envio em partes e fila de tarefas.
 - `app/static/index.html`: interface.
-- `tests/test_e2e.py`: 18 testes dos trechos de áudio; `tests/test_transcribe.py`: testes da transcrição (OpenAI simulada + Whisper com voz sintetizada); `tests/smoke_transcribe.py`: teste rápido contra um servidor rodando.
+- `tests/test_e2e.py`: 18 testes dos trechos de áudio; `tests/test_transcribe.py`: testes da transcrição (OpenAI simulada + Whisper com voz sintetizada); `tests/smoke_transcribe.py`: teste rápido contra um servidor rodando; `tests/test_channels.py`: busca de canais contra uma API do YouTube simulada.
 - A cada envio para `main`, o GitHub Actions roda os testes, testa a imagem e publica `ghcr.io/gilsonalvesgwta/ytbconverter:latest` para **amd64 e arm64** (a VPS é ARM).
 - Só aceita links do YouTube (impede que o sistema seja usado para acessar serviços internos da VPS).
 - O proxy do Cloudflare limita cada envio a 100 MB e cada resposta a 100 segundos: por isso arquivos sobem em partes de 50 MB e a transcrição roda em segundo plano.

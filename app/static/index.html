@@ -113,6 +113,65 @@
   .radio input{accent-color:var(--orange);margin-top:3px}
   .radio small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
   .radio label:has(input:checked){border-color:var(--orange)}
+
+  /* ---------- Achar canais ---------- */
+  .wrap.wide{max-width:1180px}
+  .ch-hero h2{margin:0;font-size:19px} .ch-hero p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
+  .chipbtn{background:#061a30;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:6px 12px;font-size:13px}
+  .chipbtn:hover{color:var(--text);border-color:var(--muted)}
+  .chipbtn.on{background:rgba(255,102,0,.15);border-color:var(--orange);color:#fff}
+  .ch-go{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:18px;flex-wrap:wrap}
+  .ch-est{color:var(--muted);font-size:13px}
+  .ch-est b{color:var(--text)}
+  .quota{height:6px;background:#061a30;border-radius:99px;overflow:hidden;margin-top:6px;width:220px;border:1px solid var(--line)}
+  .quota>i{display:block;height:100%;background:var(--ok)}
+  .ch-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:22px 0 12px}
+  .ch-toolbar .sum{flex:1;color:var(--muted);font-size:13.5px;min-width:220px} .ch-toolbar .sum b{color:var(--text)}
+  .ch-toolbar select,.ch-toolbar input{width:auto;padding:9px 11px;font-size:13.5px}
+  .ch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+  .chc{background:linear-gradient(180deg,var(--navy-2),#081d36);border:1px solid var(--line);border-radius:var(--radius);padding:16px;
+    display:flex;flex-direction:column;gap:12px;transition:border-color .15s,transform .15s}
+  .chc:hover{border-color:#2a5a90}
+  .chc-top{display:flex;gap:12px;align-items:center}
+  .chc-top img{width:46px;height:46px;border-radius:50%;background:#0c2746;flex:none;object-fit:cover}
+  .chc-top .nm{font-weight:700;font-size:15px;color:var(--text);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chc-top .nm:hover{color:var(--orange)}
+  .chc-top .meta{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .chc-top .rank{margin-left:auto;text-align:right;flex:none}
+  .chc-top .rank b{display:block;font-size:20px;color:var(--orange);line-height:1}
+  .chc-top .rank span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .star{background:transparent;border:1px solid var(--line);color:var(--muted);width:34px;height:34px;border-radius:9px;font-size:16px;flex:none}
+  .star.on{color:#ffc542;border-color:#ffc542}
+  .badges{display:flex;gap:6px;flex-wrap:wrap}
+  .bdg{font-size:11.5px;border-radius:999px;padding:3px 9px;border:1px solid var(--line);color:var(--muted)}
+  .bdg.ok{background:rgba(46,204,143,.12);border-color:rgba(46,204,143,.45);color:var(--ok)}
+  .bdg.warn{background:rgba(255,197,66,.1);border-color:rgba(255,197,66,.45);color:#ffc542}
+  .bdg.hot{background:rgba(255,102,0,.13);border-color:rgba(255,102,0,.5);color:#ff9a57}
+  .stats4{display:grid;grid-template-columns:repeat(4,1fr);background:#061a30;border:1px solid var(--line);border-radius:10px}
+  .stats4 div{padding:9px 8px;text-align:center;border-right:1px solid var(--line)} .stats4 div:last-child{border-right:0}
+  .stats4 b{display:block;font-size:15px} .stats4 span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .topv{display:flex;gap:10px;text-decoration:none;color:var(--text);align-items:flex-start}
+  .topv .th{position:relative;flex:none;width:132px;height:74px;border-radius:8px;overflow:hidden;background:#0c2746}
+  .topv .th img{width:100%;height:100%;object-fit:cover}
+  .topv .th em{position:absolute;right:4px;bottom:4px;background:rgba(0,0,0,.8);color:#fff;font-style:normal;font-size:11px;padding:1px 5px;border-radius:4px}
+  .topv .tt{font-size:13.5px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .topv .tm{font-size:12px;color:var(--muted);margin-top:4px}
+  .topv:hover .tt{color:var(--orange)}
+  .morev{font-size:12.5px;color:var(--muted);display:grid;gap:4px}
+  .morev a{color:var(--muted);text-decoration:none;display:flex;justify-content:space-between;gap:8px}
+  .morev a span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .morev a:hover{color:var(--text)}
+  .chc-act{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+  .chc-act .ghost{padding:7px 10px;font-size:12.5px}
+  .adres{font-size:12.5px;border-radius:8px;padding:7px 9px;display:none}
+  .adres.show{display:block}
+  .empty{text-align:center;color:var(--muted);padding:36px 12px;border:1px dashed var(--line);border-radius:var(--radius)}
+  .steps{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.7}
+  .steps b{color:var(--text)}
+  @media(max-width:860px){.grid3{grid-template-columns:1fr 1fr}}
+  @media(max-width:600px){.grid3{grid-template-columns:1fr}.ch-grid{grid-template-columns:1fr}.stats4 b{font-size:13.5px}}
 </style>
 </head>
 <body>
@@ -125,6 +184,8 @@
   <nav class="tabs" role="tablist">
     <button class="tab on" data-tab="clip" type="button" role="tab">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Baixar trecho</button>
+    <button class="tab" data-tab="ch" type="button" role="tab">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8.5 11.5 10 9l2 4 1.5-2.5"/></svg>Achar canais</button>
     <button class="tab" data-tab="tr" type="button" role="tab">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>Transcrever</button>
   </nav>
@@ -254,6 +315,78 @@
       </details>
     </form>
   </div>
+  </section>
+
+
+  <section id="tab-ch" hidden>
+  <div class="card">
+    <div class="ch-hero">
+      <h2>Achar canais de música em alta</h2>
+      <p>Canais <b>novos</b>, com vídeos <b>recentes</b> e <b>muitas visualizações</b>, em qualquer lugar do mundo. Dados oficiais da API do YouTube.</p>
+    </div>
+    <div class="grid3">
+      <div><label for="ch-age">Canal criado há no máximo</label>
+        <select id="ch-age"><option value="7">7 dias</option><option value="14">14 dias</option><option value="30" selected>30 dias</option><option value="60">60 dias</option><option value="90">90 dias</option><option value="180">6 meses</option></select></div>
+      <div><label for="ch-vdays">Vídeos publicados nos últimos</label>
+        <select id="ch-vdays"><option value="7">7 dias</option><option value="14">14 dias</option><option value="30" selected>30 dias</option><option value="60">60 dias</option><option value="90">90 dias</option></select></div>
+      <div><label for="ch-minviews">Visualizações mínimas do vídeo</label>
+        <select id="ch-minviews"><option value="10000">10 mil</option><option value="50000">50 mil</option><option value="100000" selected>100 mil</option><option value="500000">500 mil</option><option value="1000000">1 milhão</option><option value="5000000">5 milhões</option></select></div>
+      <div><label for="ch-where">Onde procurar</label><select id="ch-where"></select></div>
+      <div><label for="ch-dur">Duração dos vídeos</label><select id="ch-dur"></select></div>
+      <div><label for="ch-lang">Idioma do conteúdo</label><select id="ch-lang"></select></div>
+    </div>
+    <div style="margin-top:16px">
+      <label>Gêneros e palavras-chave <span style="color:#6f88a8">(opcional — cada um vira uma busca)</span></label>
+      <div class="chips" id="ch-genres"></div>
+      <input id="ch-kw" placeholder="Outras palavras-chave, separadas por vírgula (ex.: emotional ballads, rock romântico)" style="margin-top:10px">
+    </div>
+    <div class="grid3" style="margin-top:14px">
+      <div><label for="ch-minsubs">Mínimo de inscritos</label>
+        <select id="ch-minsubs"><option value="0" selected>Qualquer</option><option value="100">100</option><option value="1000">1.000 (mínimo para monetizar)</option><option value="10000">10 mil</option></select></div>
+    </div>
+    <div class="ch-go">
+      <div class="ch-est" id="ch-est">&nbsp;</div>
+      <button class="btn" id="ch-go" type="button">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span>Buscar canais</span></button>
+    </div>
+    <div class="status" id="ch-status"></div>
+
+    <details id="ch-settings">
+      <summary><span class="arr">▶</span> Configurações da busca (chave da API do YouTube)</summary>
+      <div style="margin-top:14px">
+        <label for="ch-key">Chave da API do YouTube (gratuita)</label>
+        <div class="folder"><input id="ch-key" type="password" placeholder="AIza..." autocomplete="off">
+          <button type="button" class="btn" id="ch-save" style="padding:11px 16px">Salvar</button>
+          <button type="button" class="ghost" id="ch-clear" hidden>Apagar</button></div>
+        <div class="status" id="ch-set-status"></div>
+        <div class="hint" style="margin-top:10px">Cota gratuita: <b id="ch-q-text">—</b> unidades usadas hoje (renova todo dia por volta das 5h). Cada busca de região/gênero usa 100.</div>
+        <div class="quota"><i id="ch-q-bar" style="width:0"></i></div>
+        <ol class="steps">
+          <li>Acesse <b>console.cloud.google.com</b> e entre com sua conta Google.</li>
+          <li>No topo, crie um projeto (ex.: <b>YTB Conversor</b>).</li>
+          <li>Menu ☰ → <b>APIs e serviços</b> → <b>Biblioteca</b> → procure <b>YouTube Data API v3</b> → <b>Ativar</b>.</li>
+          <li><b>APIs e serviços</b> → <b>Credenciais</b> → <b>Criar credenciais</b> → <b>Chave de API</b>. Copie a chave (começa com <b>AIza</b>).</li>
+          <li>Recomendado: clique na chave → <b>Restrições de API</b> → restringir à <b>YouTube Data API v3</b> (não restrinja por site/IP).</li>
+          <li>Cole a chave acima e clique em <b>Salvar</b>. Pronto: é gratuito, sem cartão.</li>
+        </ol>
+      </div>
+    </details>
+  </div>
+
+  <div class="ch-toolbar" id="ch-toolbar" hidden>
+    <div class="sum" id="ch-sum"></div>
+    <input id="ch-filter" placeholder="Filtrar por nome">
+    <select id="ch-sort">
+      <option value="score">Melhor oportunidade</option><option value="views_per_day">Mais views por dia</option>
+      <option value="age_days">Mais novos</option><option value="top_views">Vídeo mais visto</option>
+      <option value="top_views_per_hour">Vídeo mais rápido (views/h)</option><option value="subs">Mais inscritos</option>
+    </select>
+    <select id="ch-mon"><option value="">Toda monetização</option><option value="provavel">Monetização provável</option><option value="perto">Provável + perto</option></select>
+    <button type="button" class="ghost" id="ch-favs">★ Favoritos</button>
+    <button type="button" class="ghost" id="ch-csv">Exportar CSV</button>
+  </div>
+  <div class="ch-grid" id="ch-grid"></div>
   </section>
 
   <footer>WTA Tech · YTB Conversor <span id="ver"></span><a href="#" id="logout" style="color:#58708f" hidden> · sair</a></footer>
@@ -536,10 +669,12 @@
   // ---------- abas
   document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === t));
-    $("tab-clip").hidden = t.dataset.tab !== "clip";
-    $("tab-tr").hidden = t.dataset.tab !== "tr";
-    try { history.replaceState(null, "", t.dataset.tab === "tr" ? "#transcrever" : location.pathname + location.search); } catch {}
+    ["clip", "tr", "ch"].forEach(k => { $("tab-" + k).hidden = t.dataset.tab !== k; });
+    document.querySelector(".wrap").classList.toggle("wide", t.dataset.tab === "ch");
+    const hashes = { tr: "#transcrever", ch: "#canais" };
+    try { history.replaceState(null, "", hashes[t.dataset.tab] || location.pathname + location.search); } catch {}
     if (t.dataset.tab === "tr") loadSettings();
+    if (t.dataset.tab === "ch" && window.YTBC_CH) window.YTBC_CH.open();
   }));
 
   // ---------- configurações
@@ -988,6 +1123,7 @@
 
   // retoma a última transcrição (ex.: página recarregada no meio)
   if (location.hash === "#transcrever") document.querySelector('.tab[data-tab="tr"]').click();
+  if (location.hash === "#canais") setTimeout(() => document.querySelector('.tab[data-tab="ch"]').click(), 0);
   try {
     const last = JSON.parse(ls.get(LS_JOB) || "null");
     if (last && last.id) {
@@ -1000,6 +1136,219 @@
       }, 600);
     }
   } catch {}
+})();
+</script>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const api = (...a) => window.YTBC.api(...a);
+  const nf = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
+  const num = (n) => n == null ? "—" : nf.format(n);
+  const full = (n) => n == null ? "—" : n.toLocaleString("pt-BR");
+  const flag = (cc) => cc && /^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map(c => 127397 + c.charCodeAt(0))) + " " + cc : "";
+  const ago = (days) => days < 1 ? `há ${Math.max(1, Math.round(days * 24))} h` : days < 2 ? "há 1 dia" : `há ${Math.round(days)} dias`;
+  const hrs = (h) => h == null ? "" : h < 24 ? `há ${Math.round(h)} h` : ago(h / 24);
+  const dur = (s) => { s = s || 0; const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
+  const LS = "ytbc.ch.filters", LSR = "ytbc.ch.results";
+  const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } }, set(k, v){ try { localStorage.setItem(k, v); } catch {} } };
+  let opts = null, results = [], stats = null, favs = [], showFavs = false, loaded = false, estTimer = null, selGenres = new Set();
+  const MON = { provavel: ["ok", "Monetização provável"], perto: ["warn", "Perto de monetizar"], improvavel: ["", "Ainda não elegível"],
+                talvez: ["warn", "Talvez (inscritos ocultos)"], desconhecido: ["", "Sem dados de monetização"] };
+  function setStatus(kind, html, el = $("ch-status")) { el.className = "status " + (kind || ""); el.innerHTML = html || ""; }
+
+  async function open() {
+    if (loaded) return;
+    try {
+      const d = await (await api("/api/channels/settings")).json();
+      if (!d.ok) throw new Error(d.error);
+      opts = d.options; loaded = true; fill(d); restore(); estimate(); loadFavs();
+      if (!d.api_key_set) { $("ch-settings").open = true; setStatus("info", "Para começar, cadastre a chave gratuita da API do YouTube em <b>Configurações da busca</b> (passo a passo abaixo)."); }
+      try { const r = JSON.parse(ls.get(LSR) || "null"); if (r && r.channels) { results = r.channels; stats = r.stats; render(); } } catch {}
+    } catch (e) { setStatus("err", esc(e.message || "Não consegui carregar.")); }
+  }
+  function quota(d) {
+    $("ch-q-text").textContent = `${full(d.quota_used)} de ${full(d.quota_limit)}`;
+    $("ch-q-bar").style.width = Math.min(100, d.quota_used / d.quota_limit * 100) + "%";
+    $("ch-q-bar").style.background = d.quota_used / d.quota_limit > .85 ? "var(--err)" : "var(--ok)";
+  }
+  function fill(d) {
+    const where = [`<optgroup label="Mundo todo (varredura)">`];
+    for (const [k, v] of Object.entries(opts.depths))
+      where.push(`<option value="d:${k}"${k === "normal" ? " selected" : ""}>${esc(v.label)} — ${v.searches} busca${v.searches > 1 ? "s" : ""} (≈${full(v.searches * 100)} unidades)</option>`);
+    where.push(`</optgroup><optgroup label="Um país específico">`);
+    for (const [c, n] of opts.regions) where.push(`<option value="r:${c}">${flag(c)} — ${esc(n)}</option>`);
+    $("ch-where").innerHTML = where.join("") + "</optgroup>";
+    $("ch-dur").innerHTML = Object.entries(opts.durations).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+    $("ch-lang").innerHTML = opts.langs.map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+    $("ch-genres").innerHTML = opts.genres.map(g => `<button type="button" class="chipbtn" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+    $("ch-genres").querySelectorAll(".chipbtn").forEach(b => b.addEventListener("click", () => {
+      b.classList.toggle("on"); b.classList.contains("on") ? selGenres.add(b.dataset.g) : selGenres.delete(b.dataset.g); changed(); }));
+    $("ch-key").placeholder = d.api_key_set ? `Chave salva (${d.api_key_hint}) — cole outra para trocar` : "AIza...";
+    $("ch-clear").hidden = !d.api_key_set;
+    quota(d);
+  }
+  function params() {
+    const w = $("ch-where").value, kw = [...selGenres, ...$("ch-kw").value.split(",").map(x => x.trim()).filter(Boolean)];
+    return { channel_days: +$("ch-age").value, video_days: +$("ch-vdays").value, min_views: +$("ch-minviews").value,
+             duration: $("ch-dur").value, lang: $("ch-lang").value, min_subs: +$("ch-minsubs").value, keywords: kw,
+             depth: w.startsWith("d:") ? w.slice(2) : null, region: w.startsWith("r:") ? w.slice(2) : null };
+  }
+  function save() { ls.set(LS, JSON.stringify({ ...params(), where: $("ch-where").value, kw: $("ch-kw").value })); }
+  function restore() {
+    try { const f = JSON.parse(ls.get(LS) || "null"); if (!f) return;
+      for (const [id, k] of [["ch-age", "channel_days"], ["ch-vdays", "video_days"], ["ch-minviews", "min_views"], ["ch-dur", "duration"], ["ch-lang", "lang"], ["ch-minsubs", "min_subs"], ["ch-where", "where"]])
+        if (f[k] != null && [...$(id).options].some(o => o.value == f[k])) $(id).value = f[k];
+      $("ch-kw").value = f.kw || "";
+      (f.keywords || []).forEach(g => { const b = $("ch-genres").querySelector(`[data-g="${CSS.escape(g)}"]`); if (b) { b.classList.add("on"); selGenres.add(g); } });
+    } catch {}
+  }
+  function changed() { save(); clearTimeout(estTimer); estTimer = setTimeout(estimate, 250); }
+  async function estimate() {
+    try {
+      const d = await (await api("/api/channels/estimate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(params()) })).json();
+      if (d.ok) $("ch-est").innerHTML = `Esta busca: <b>${d.searches}</b> consulta${d.searches > 1 ? "s" : ""} · ≈ <b>${full(d.units)}</b> unidades da cota diária gratuita`;
+    } catch {}
+  }
+
+  async function search() {
+    const btn = $("ch-go"); btn.disabled = true; const t0 = Date.now();
+    const tick = setInterval(() => setStatus("info", `<span class="spin"></span>&nbsp; Varrendo o YouTube e analisando canais… ${Math.round((Date.now() - t0) / 1000)}s`), 500);
+    setStatus("info", `<span class="spin"></span>&nbsp; Varrendo o YouTube e analisando canais…`);
+    try {
+      const res = await api("/api/channels/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(params()) });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error);
+      results = d.channels; stats = d.stats; showFavs = false; $("ch-favs").classList.remove("on");
+      quota({ quota_used: d.quota.used, quota_limit: d.quota.limit });
+      ls.set(LSR, JSON.stringify({ channels: results, stats }));
+      setStatus(results.length ? "ok" : "info", results.length
+        ? `✔ <b>${results.length}</b> canais encontrados em ${stats.seconds}s.`
+        : "Nenhum canal novo passou nos filtros. Tente: canal criado há mais dias, menos visualizações mínimas, varredura Profunda ou gêneros específicos.");
+      render();
+    } catch (e) { setStatus("err", esc(e.message || "Erro na busca.")); }
+    finally { clearInterval(tick); btn.disabled = false; }
+  }
+
+  function list() {
+    let arr = showFavs ? favs.map(f => ({ ...f, fav: true })) : results.slice();
+    const q = $("ch-filter").value.trim().toLowerCase();
+    if (q) arr = arr.filter(c => (c.title + " " + (c.handle || "")).toLowerCase().includes(q));
+    const m = $("ch-mon").value;
+    if (m) arr = arr.filter(c => c.monetization && (c.monetization.status === "provavel" || (m === "perto" && c.monetization.status === "perto")));
+    const k = $("ch-sort").value;
+    if (!showFavs || k !== "score") arr.sort((a, b) => k === "age_days" ? (a.age_days ?? 1e9) - (b.age_days ?? 1e9) : (b[k] ?? -1) - (a[k] ?? -1));
+    return arr;
+  }
+  const isFav = (id) => favs.some(f => f.id === id);
+
+  function card(c) {
+    const mon = MON[(c.monetization || {}).status] || MON.desconhecido;
+    const v = (c.videos || [])[0];
+    const created = c.age_days != null ? ago(c.age_days) : (c.created ? new Date(c.created).toLocaleDateString("pt-BR") : "");
+    const hot = c.age_days != null && c.age_days <= 7 ? `<span class="bdg hot">🔥 canal de ${Math.max(1, Math.round(c.age_days))} dia${Math.round(c.age_days) > 1 ? "s" : ""}</span>` : "";
+    const wh = c.monetization && c.monetization.watch_hours != null ? ` title="Estimativa: ~${full(c.monetization.watch_hours)} horas assistidas (regra: 1.000 inscritos + 4.000 h, ou 10 mi de views em Shorts)"` : "";
+    return `<div class="chc" data-id="${esc(c.id)}">
+      <div class="chc-top">
+        <img src="${esc(c.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+        <div style="min-width:0;flex:1"><a class="nm" href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title)}</a>
+          <div class="meta">${esc(c.handle || "")}${c.country ? " · " + flag(c.country) : ""}${created ? " · criado " + created : ""}</div></div>
+        ${c.score != null ? `<div class="rank"><b>${Math.round(c.score)}</b><span>pontos</span></div>` : ""}
+        <button type="button" class="star${isFav(c.id) ? " on" : ""}" data-act="fav" title="Favoritar">★</button>
+      </div>
+      <div class="badges"><span class="bdg ${mon[0]}"${wh}>${mon[1]}</span>${hot}${c.monetization && c.monetization.shorts ? '<span class="bdg">Shorts</span>' : ""}${c.avg_duration >= 1200 ? '<span class="bdg">Playlists longas</span>' : ""}</div>
+      <div class="stats4">
+        <div><b>${num(c.subs)}</b><span>inscritos</span></div><div><b>${num(c.views)}</b><span>views</span></div>
+        <div><b>${num(c.views_per_day)}</b><span>views/dia</span></div><div><b>${num(c.video_count)}</b><span>vídeos</span></div>
+      </div>
+      ${v ? `<a class="topv" href="https://www.youtube.com/watch?v=${esc(v.id)}" target="_blank" rel="noopener">
+        <div class="th"><img src="${esc(v.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer"><em>${dur(v.duration)}</em></div>
+        <div style="min-width:0"><div class="tt">${esc(v.title)}</div>
+          <div class="tm"><b style="color:var(--text)">${num(v.views)}</b> views · ${hrs(v.age_hours)} · ${num(v.views_per_hour)}/hora</div></div></a>` : ""}
+      ${(c.videos || []).length > 1 ? `<div class="morev">${c.videos.slice(1, 4).map(x => `<a href="https://www.youtube.com/watch?v=${esc(x.id)}" target="_blank" rel="noopener"><span>${esc(x.title)}</span><span>${num(x.views)} · ${hrs(x.age_hours)}</span></a>`).join("")}</div>` : ""}
+      <div class="chc-act">
+        <a class="ghost" href="${esc(c.url)}/videos" target="_blank" rel="noopener" style="text-decoration:none">Abrir canal ↗</a>
+        ${v ? `<button type="button" class="ghost" data-act="ads" data-v="${esc(v.id)}">Verificar anúncios</button>
+        <button type="button" class="ghost" data-act="tr" data-v="${esc(v.id)}">Transcrição</button>
+        <button type="button" class="ghost" data-act="clip" data-v="${esc(v.id)}">Baixar trecho</button>` : ""}
+      </div>
+      <div class="adres"></div>
+    </div>`;
+  }
+  function render() {
+    const arr = list();
+    $("ch-toolbar").hidden = !(results.length || favs.length);
+    $("ch-sum").innerHTML = showFavs ? `<b>${arr.length}</b> canais favoritos`
+      : stats ? `<b>${arr.length}</b> canais · ${full(stats.videos)} vídeos analisados · ${full(stats.channels_checked)} canais checados · ${full(stats.units)} unidades${stats.cached_calls ? " (parte do cache)" : ""}` : "";
+    $("ch-grid").innerHTML = arr.length ? arr.map(card).join("")
+      : (results.length || showFavs) ? `<div class="empty">${showFavs ? "Nenhum favorito ainda. Clique na ★ de um canal para salvar." : "Nenhum canal com esses filtros de exibição."}</div>` : "";
+  }
+
+  async function loadFavs() { try { const d = await (await api("/api/channels/favorites")).json(); if (d.ok) { favs = d.favorites; render(); } } catch {} }
+  async function toggleFav(c) {
+    const on = isFav(c.id);
+    const res = on ? await api("/api/channels/favorites/" + c.id, { method: "DELETE" })
+                   : await api("/api/channels/favorites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(c) });
+    const d = await res.json(); if (d.ok) { favs = d.favorites; render(); }
+  }
+  async function adCheck(btn, box) {
+    btn.disabled = true; box.className = "adres show status info"; box.innerHTML = `<span class="spin"></span>&nbsp; Verificando anúncios no vídeo…`;
+    try {
+      const d = await (await api("/api/channels/adcheck", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: btn.dataset.v }) })).json();
+      const kind = d.status === "anuncios" ? "ok" : d.status === "sem_anuncios" ? "info" : "err";
+      box.className = "adres show status " + kind; box.textContent = (d.status === "anuncios" ? "✔ " : "") + (d.detail || d.error);
+    } catch (e) { box.className = "adres show status err"; box.textContent = e.message; }
+    btn.disabled = false;
+  }
+  function goTab(tab, setter) {
+    document.querySelector(`.tab[data-tab="${tab}"]`).click(); setter();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  $("ch-grid").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    const el = b.closest(".chc"), id = el.dataset.id;
+    const c = (showFavs ? favs : results).find(x => x.id === id) || results.find(x => x.id === id);
+    const url = b.dataset.v ? "https://www.youtube.com/watch?v=" + b.dataset.v : "";
+    if (b.dataset.act === "fav" && c) toggleFav(c);
+    if (b.dataset.act === "ads") adCheck(b, el.querySelector(".adres"));
+    if (b.dataset.act === "tr") goTab("tr", () => { const i = $("tr-url"); i.value = url; i.dispatchEvent(new Event("input")); });
+    if (b.dataset.act === "clip") goTab("clip", () => { const i = $("url"); i.value = url; i.dispatchEvent(new Event("input")); });
+  });
+
+  function csv() {
+    const rows = [["canal", "link", "pais", "criado_em", "idade_dias", "inscritos", "views_totais", "views_por_dia", "videos", "monetizacao", "horas_estimadas", "video_top", "video_top_link", "views_video_top", "pontos"]];
+    for (const c of list()) { const v = (c.videos || [])[0] || {};
+      rows.push([c.title, c.url, c.country, c.created, c.age_days, c.subs, c.views, c.views_per_day, c.video_count,
+                 (MON[(c.monetization || {}).status] || MON.desconhecido)[1], (c.monetization || {}).watch_hours, v.title || "",
+                 v.id ? "https://www.youtube.com/watch?v=" + v.id : "", v.views, c.score]); }
+    const text = "﻿" + rows.map(r => r.map(x => `"${String(x ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+    a.download = `canais-${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  async function saveKey(clear) {
+    const body = clear ? { clear_api_key: true } : { api_key: $("ch-key").value.trim() };
+    if (!clear && !body.api_key) return;
+    try {
+      const d = await (await api("/api/channels/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+      if (!d.ok) throw new Error(d.error);
+      $("ch-key").value = ""; fill(d); restore();
+      setStatus("ok", clear ? "Chave apagada." : "Chave salva. Já pode buscar canais.", $("ch-set-status"));
+      if (!clear) { setStatus("", ""); }
+    } catch (e) { setStatus("err", esc(e.message), $("ch-set-status")); }
+  }
+
+  ["ch-age", "ch-vdays", "ch-minviews", "ch-where", "ch-dur", "ch-lang", "ch-minsubs"].forEach(id => $(id).addEventListener("change", changed));
+  $("ch-kw").addEventListener("input", changed);
+  $("ch-go").addEventListener("click", search);
+  ["ch-filter", "ch-sort", "ch-mon"].forEach(id => $(id).addEventListener(id === "ch-filter" ? "input" : "change", render));
+  $("ch-favs").addEventListener("click", () => { showFavs = !showFavs; $("ch-favs").classList.toggle("on", showFavs); $("ch-favs").style.color = showFavs ? "#ffc542" : ""; render(); });
+  $("ch-csv").addEventListener("click", csv);
+  $("ch-save").addEventListener("click", () => saveKey(false));
+  $("ch-clear").addEventListener("click", () => saveKey(true));
+  window.YTBC_CH = { open };
 })();
 </script>
 </body>

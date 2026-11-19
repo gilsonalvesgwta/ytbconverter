@@ -25,6 +25,8 @@ jobs:
           pip install -q faster-whisper
       - name: Rodar testes (cortes, formatos, erros, senha, cookies)
         run: python tests/test_e2e.py
+      - name: Rodar testes da busca de canais (API do YouTube simulada)
+        run: python tests/test_channels.py
       - name: Rodar testes da transcrição (OpenAI simulada + Whisper gratuito com voz real)
         run: python tests/test_transcribe.py
         env:
