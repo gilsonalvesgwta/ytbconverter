@@ -321,8 +321,8 @@
   <section id="tab-ch" hidden>
   <div class="card">
     <div class="ch-hero">
-      <h2>Achar canais de música em alta</h2>
-      <p>Canais <b>novos</b>, com vídeos <b>recentes</b> e <b>muitas visualizações</b>, em qualquer lugar do mundo. Dados oficiais da API do YouTube.</p>
+      <h2>Achar canais de música com IA em alta</h2>
+      <p>Canais <b>novos</b> de música feita com <b>IA</b> (Suno, Udio…), com vídeos <b>recentes</b> e <b>muitas visualizações</b>, em qualquer lugar do mundo. Dados oficiais da API do YouTube.</p>
     </div>
     <div class="grid3">
       <div><label for="ch-age">Canal criado há no máximo</label>
@@ -339,6 +339,10 @@
       <label>Gêneros e palavras-chave <span style="color:#6f88a8">(opcional — cada um vira uma busca)</span></label>
       <div class="chips" id="ch-genres"></div>
       <input id="ch-kw" placeholder="Outras palavras-chave, separadas por vírgula (ex.: emotional ballads, rock romântico)" style="margin-top:10px">
+    </div>
+    <div style="margin-top:16px">
+      <label class="check"><input type="checkbox" id="ch-ai" checked> <b>Somente canais de música feita com IA</b></label>
+      <div class="hint">Busca vídeos que mencionam IA/Suno/Udio e confirma por três sinais: selo oficial de conteúdo sintético declarado pelo criador, menções no título/descrição/tags e na descrição do canal. Canais de IA que não declaram nada em lugar nenhum não têm como ser identificados.</div>
     </div>
     <div class="grid3" style="margin-top:14px">
       <div><label for="ch-minsubs">Mínimo de inscritos</label>
@@ -1193,7 +1197,7 @@
   function params() {
     const w = $("ch-where").value, kw = [...selGenres, ...$("ch-kw").value.split(",").map(x => x.trim()).filter(Boolean)];
     return { channel_days: +$("ch-age").value, video_days: +$("ch-vdays").value, min_views: +$("ch-minviews").value,
-             duration: $("ch-dur").value, lang: $("ch-lang").value, min_subs: +$("ch-minsubs").value, keywords: kw,
+             duration: $("ch-dur").value, lang: $("ch-lang").value, min_subs: +$("ch-minsubs").value, keywords: kw, ai_only: $("ch-ai").checked,
              depth: w.startsWith("d:") ? w.slice(2) : null, region: w.startsWith("r:") ? w.slice(2) : null };
   }
   function save() { ls.set(LS, JSON.stringify({ ...params(), where: $("ch-where").value, kw: $("ch-kw").value })); }
@@ -1201,7 +1205,7 @@
     try { const f = JSON.parse(ls.get(LS) || "null"); if (!f) return;
       for (const [id, k] of [["ch-age", "channel_days"], ["ch-vdays", "video_days"], ["ch-minviews", "min_views"], ["ch-dur", "duration"], ["ch-lang", "lang"], ["ch-minsubs", "min_subs"], ["ch-where", "where"]])
         if (f[k] != null && [...$(id).options].some(o => o.value == f[k])) $(id).value = f[k];
-      $("ch-kw").value = f.kw || "";
+      $("ch-kw").value = f.kw || ""; if (f.ai_only === false) $("ch-ai").checked = false;
       (f.keywords || []).forEach(g => { const b = $("ch-genres").querySelector(`[data-g="${CSS.escape(g)}"]`); if (b) { b.classList.add("on"); selGenres.add(g); } });
     } catch {}
   }
@@ -1243,6 +1247,8 @@
     return arr;
   }
   const isFav = (id) => favs.some(f => f.id === id);
+  const AI = { declarada: ["ok", "🤖 IA declarada"], forte: ["hot", "🤖 Música de IA"], indicio: ["warn", "🤖 Indício de IA"] };
+  const aiBadge = (ai) => ai && AI[ai.level] ? `<span class="bdg ${AI[ai.level][0]}" title="${esc((ai.reasons || []).join(" · "))}">${AI[ai.level][1]}</span>` : "";
 
   function card(c) {
     const mon = MON[(c.monetization || {}).status] || MON.desconhecido;
@@ -1258,7 +1264,8 @@
         ${c.score != null ? `<div class="rank"><b>${Math.round(c.score)}</b><span>pontos</span></div>` : ""}
         <button type="button" class="star${isFav(c.id) ? " on" : ""}" data-act="fav" title="Favoritar">★</button>
       </div>
-      <div class="badges"><span class="bdg ${mon[0]}"${wh}>${mon[1]}</span>${hot}${c.monetization && c.monetization.shorts ? '<span class="bdg">Shorts</span>' : ""}${c.avg_duration >= 1200 ? '<span class="bdg">Playlists longas</span>' : ""}</div>
+      <div class="badges">${aiBadge(c.ai)}<span class="bdg ${mon[0]}"${wh}>${mon[1]}</span>${hot}${c.monetization && c.monetization.shorts ? '<span class="bdg">Shorts</span>' : ""}${c.avg_duration >= 1200 ? '<span class="bdg">Playlists longas</span>' : ""}</div>
+      ${c.ai && c.ai.reasons && c.ai.reasons.length ? `<div class="hint" style="margin-top:-4px">🤖 ${esc(c.ai.reasons.join(" · "))}</div>` : ""}
       <div class="stats4">
         <div><b>${num(c.subs)}</b><span>inscritos</span></div><div><b>${num(c.views)}</b><span>views</span></div>
         <div><b>${num(c.views_per_day)}</b><span>views/dia</span></div><div><b>${num(c.video_count)}</b><span>vídeos</span></div>
@@ -1318,9 +1325,10 @@
   });
 
   function csv() {
-    const rows = [["canal", "link", "pais", "criado_em", "idade_dias", "inscritos", "views_totais", "views_por_dia", "videos", "monetizacao", "horas_estimadas", "video_top", "video_top_link", "views_video_top", "pontos"]];
+    const rows = [["canal", "link", "pais", "criado_em", "idade_dias", "inscritos", "views_totais", "views_por_dia", "videos", "ia", "motivos_ia", "monetizacao", "horas_estimadas", "video_top", "video_top_link", "views_video_top", "pontos"]];
     for (const c of list()) { const v = (c.videos || [])[0] || {};
       rows.push([c.title, c.url, c.country, c.created, c.age_days, c.subs, c.views, c.views_per_day, c.video_count,
+                 c.ai ? (AI[c.ai.level] || ["", "não"])[1].replace("🤖 ", "") : "", c.ai ? (c.ai.reasons || []).join(" | ") : "",
                  (MON[(c.monetization || {}).status] || MON.desconhecido)[1], (c.monetization || {}).watch_hours, v.title || "",
                  v.id ? "https://www.youtube.com/watch?v=" + v.id : "", v.views, c.score]); }
     const text = "﻿" + rows.map(r => r.map(x => `"${String(x ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
@@ -1340,7 +1348,7 @@
     } catch (e) { setStatus("err", esc(e.message), $("ch-set-status")); }
   }
 
-  ["ch-age", "ch-vdays", "ch-minviews", "ch-where", "ch-dur", "ch-lang", "ch-minsubs"].forEach(id => $(id).addEventListener("change", changed));
+  ["ch-age", "ch-vdays", "ch-minviews", "ch-where", "ch-dur", "ch-lang", "ch-minsubs", "ch-ai"].forEach(id => $(id).addEventListener("change", changed));
   $("ch-kw").addEventListener("input", changed);
   $("ch-go").addEventListener("click", search);
   ["ch-filter", "ch-sort", "ch-mon"].forEach(id => $(id).addEventListener(id === "ch-filter" ? "input" : "change", render));

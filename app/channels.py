@@ -250,7 +250,51 @@ def monetization_estimate(subs, total_views, avg_duration):
     return {"status": status, "watch_hours": int(hours), "shorts": shorts}
 
 
+# ---------------------------------------------------------------- música feita com IA
+AI_TOOLS = re.compile(r"\b(suno|udio|riffusion|mubert|aiva|soundraw|boomy|loudly|beatoven)\b", re.I)
+AI_PHRASES = re.compile(
+    r"#ai\b|#aimusic|#aisong|#sunoai|#suno|"
+    r"\b(ai|a\.i\.)[\s\-]*(music|songs?|covers?|generated|voices?|singers?|artists?|bands?|albums?|playlists?|mix|vocals?|cover)\b|"
+    r"\b(generated|made|created|produced|composed|written)\s+(with|by|using)\s+(an?\s+)?(ai|a\.i\.|artificial intelligence)\b|"
+    r"\bartificial intelligence\b|intelig[êe]ncia artificial|"
+    r"\b(m[úu]sicas?|can[çc][õo]es|canciones?)\s+(com|con|de|feitas? com|hechas? con|criadas? com)\s+(ia|ai)\b",
+    re.I)
+AI_UPPER = re.compile(r"\b(IA|AI)\b")  # "IA"/"AI" em maiúsculas (evita "ai" de "ai ai ai")
+
+
+def ai_signals(videos, channel_desc):
+    """Pontua se o canal é de música feita com IA e explica por quê."""
+    reasons, score = [], 0
+    if any(v.get("synthetic") for v in videos):
+        score += 4
+        reasons.append("o criador declarou conteúdo alterado/sintético (IA) no YouTube")
+    text_v = " ".join(f"{v.get('title', '')} {v.get('description', '')} {' '.join(v.get('tags') or [])}" for v in videos)
+    tools = sorted({m.group(1).capitalize() for m in AI_TOOLS.finditer(text_v + " " + (channel_desc or ""))})
+    if tools:
+        score += 3
+        reasons.append("menciona " + ", ".join(tools))
+    if AI_PHRASES.search(text_v):
+        score += 2
+        reasons.append("vídeos dizem que a música é feita com IA")
+    elif AI_UPPER.search(" ".join(v.get("title", "") for v in videos)):
+        score += 1
+        reasons.append("título com \"AI/IA\"")
+    if channel_desc and (AI_PHRASES.search(channel_desc) or AI_UPPER.search(channel_desc)):
+        score += 2
+        reasons.append("descrição do canal fala em IA")
+    level = "declarada" if any(v.get("synthetic") for v in videos) else "forte" if score >= 3 else "indicio" if score >= 2 else "nao"
+    return {"score": score, "level": level, "reasons": reasons}
+
+
 # ---------------------------------------------------------------- busca
+def ai_query(k):
+    """Busca direcionada a música de IA (o YouTube aceita | como OU)."""
+    k = (k or "").strip()
+    if not k:
+        return "ai music|suno|udio|ai song"
+    return f"{k} ai|{k} suno|{k} udio"
+
+
 def plan_searches(p):
     keywords = [k.strip() for k in (p.get("keywords") or []) if k and k.strip()][:10] or [""]
     if p.get("region"):
@@ -258,6 +302,8 @@ def plan_searches(p):
     else:
         d = DEPTHS.get(p.get("depth") or "normal", DEPTHS["normal"])
         regions, pages = d["regions"], d["pages"]
+    if p.get("ai_only", True):
+        keywords = [ai_query(k) for k in keywords]
     plan = [(r, k) for k in keywords for r in regions]
     return plan, max(1, min(pages, 5))
 
@@ -279,6 +325,7 @@ def search_channels(p, key=None):
     min_subs = _int(p.get("min_subs")) or 0
     duration = p.get("duration") if p.get("duration") in DURATIONS else "any"
     lang = p.get("lang") or ""
+    ai_only = bool(p.get("ai_only", True))
     after = (now - dt.timedelta(days=video_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     plan, pages = plan_searches(p)
     est = min(len(plan) * pages, MAX_SEARCHES) * 100
@@ -321,7 +368,7 @@ def search_channels(p, key=None):
     videos = {}
 
     def get_videos(batch):
-        data = _api("videos", {"part": "snippet,statistics,contentDetails", "id": ",".join(batch), "maxResults": 50},
+        data = _api("videos", {"part": "snippet,statistics,contentDetails,status", "id": ",".join(batch), "maxResults": 50},
                     key, counter)
         return data.get("items") or []
 
@@ -337,6 +384,8 @@ def search_channels(p, key=None):
                     "duration": parse_duration((v.get("contentDetails") or {}).get("duration")),
                     "thumb": _thumb(sn), "age_hours": max(1.0, (now - pub).total_seconds() / 3600) if pub else None,
                     "language": sn.get("defaultAudioLanguage") or sn.get("defaultLanguage") or "",
+                    "description": (sn.get("description") or "")[:3000], "tags": (sn.get("tags") or [])[:40],
+                    "synthetic": bool((v.get("status") or {}).get("containsSyntheticMedia")),
                 }
     for v in videos.values():
         v["views_per_hour"] = int(v["views"] / v["age_hours"]) if v["age_hours"] else 0
@@ -367,6 +416,9 @@ def search_channels(p, key=None):
                 if min_subs and (subs or 0) < min_subs:
                     continue
                 vids = sorted(by_channel.get(c["id"], []), key=lambda v: -v["views"])
+                ai = ai_signals(vids, sn.get("description") or "")
+                if ai_only and ai["level"] == "nao":
+                    continue
                 total_views = _int(st.get("viewCount")) or sum(v["views"] for v in vids)
                 avg_dur = sum(v["duration"] for v in vids) / len(vids) if vids else 0
                 top = vids[0] if vids else None
@@ -379,8 +431,9 @@ def search_channels(p, key=None):
                     "subs_per_day": int(subs / max(1.0, age_days)) if subs is not None else None,
                     "top_views": top["views"] if top else 0,
                     "top_views_per_hour": top["views_per_hour"] if top else 0,
-                    "avg_duration": int(avg_dur), "videos": vids[:5],
-                    "monetization": monetization_estimate(subs, total_views, avg_dur),
+                    "avg_duration": int(avg_dur),
+                    "monetization": monetization_estimate(subs, total_views, avg_dur), "ai": ai,
+                    "videos": [{k: v[k] for k in v if k not in ("description", "tags")} for v in vids[:5]],
                 })
     # pontuação: velocidade de views ponderada pela novidade do canal
     for ch in channels:
@@ -418,7 +471,7 @@ def ad_check(video_id, cookie_header=""):
 
 # ---------------------------------------------------------------- favoritos
 FAV_FIELDS = ("id", "title", "handle", "url", "thumb", "country", "created", "subs", "views", "video_count",
-              "views_per_day", "monetization")
+              "views_per_day", "monetization", "ai")
 
 
 def list_favorites():

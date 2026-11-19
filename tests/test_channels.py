@@ -31,15 +31,22 @@ def cid(ch):
 
 CHANNELS = {
     # canal de playlists novo e explodindo
-    "A": {"created": 5, "subs": "2500", "views": "3000000", "videos": "6", "country": "US", "title": "Nova Slow Rock"},
+    "A": {"created": 5, "subs": "2500", "views": "3000000", "videos": "6", "country": "US", "title": "Nova Slow Rock",
+          "desc": "Emotional rock ballads."},
     # canal novo, perto de monetizar
-    "B": {"created": 20, "subs": "700", "views": "300000", "videos": "12", "country": "BR", "title": "Louvores de Paz"},
+    "B": {"created": 20, "subs": "700", "views": "300000", "videos": "12", "country": "BR", "title": "Louvores de Paz",
+          "desc": "Louvores novos toda semana. Músicas criadas com IA."},
     # canal antigo (precisa ser descartado)
     "C": {"created": 800, "subs": "900000", "views": "90000000", "videos": "400", "country": "GB", "title": "Old Hits"},
     # canal novo com vídeo de poucas views (descartado pelo mínimo) e inscritos ocultos
     "D": {"created": 3, "subs": None, "views": "50000", "videos": "2", "country": "", "title": "Tiny Beats"},
     # canal de Shorts novo
     "E": {"created": 10, "subs": "5000", "views": "12000000", "videos": "30", "country": "IN", "title": "Shorts Music"},
+}
+AI_META = {  # sinais de IA por vídeo: descrição, tags, selo de conteúdo sintético
+    "vidA1xxxxxx": ("Playlist completa. Made with Suno v5.", ["soft rock", "aimusic"], True),
+    "vidB1xxxxxx": ("Louvor para dormir", [], False),
+    "vidE1xxxxxx": ("Ai ai ai #shorts", ["dance"], False),
 }
 VIDEOS = {  # id(11) -> canal, views, duração, dias
     "vidA1xxxxxx": ("A", 1_800_000, "PT1H2M10S", 4), "vidA2xxxxxx": ("A", 900_000, "PT58M", 2),
@@ -101,7 +108,10 @@ class FakeYT(http.server.BaseHTTPRequestHandler):
             items = []
             for i in q["id"].split(","):
                 ch, views, dur, days = VIDEOS[i]
-                items.append({"id": i, "snippet": {"title": f"Vídeo {i}", "channelId": cid(ch), "publishedAt": iso(days),
+                desc, tags, syn = AI_META.get(i, ("", [], False))
+                items.append({"id": i, "status": {"containsSyntheticMedia": syn} if syn else {},
+                              "snippet": {"title": f"Vídeo {i}", "channelId": cid(ch), "publishedAt": iso(days),
+                                          "description": desc, "tags": tags,
                                                     "thumbnails": {"medium": {"url": f"https://i.ytimg.com/{i}.jpg"}}},
                               "statistics": {"viewCount": str(views), "likeCount": "100"},
                               "contentDetails": {"duration": dur}})
@@ -116,7 +126,7 @@ class FakeYT(http.server.BaseHTTPRequestHandler):
                     st["hiddenSubscriberCount"] = True
                 else:
                     st["subscriberCount"] = d["subs"]
-                items.append({"id": c, "snippet": {"title": d["title"], "publishedAt": iso(d["created"]),
+                items.append({"id": c, "snippet": {"title": d["title"], "publishedAt": iso(d["created"]), "description": d.get("desc", ""),
                                                    "country": d["country"], "customUrl": "@" + d["title"].replace(" ", "").lower(),
                                                    "thumbnails": {"default": {"url": f"https://yt3/{ch}.jpg"}}},
                               "statistics": st})
@@ -159,7 +169,7 @@ class TestChannelFinder(Base):
     def test_2_search_filters_and_metrics(self):
         self.post("/api/channels/settings", {"api_key": KEY})
         FakeYT.log.clear()
-        st, d = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 30, "video_days": 30, "min_views": 100000})
+        st, d = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 30, "video_days": 30, "min_views": 100000, "ai_only": False})
         self.assertEqual(st, 200, d)
         found = {c["title"]: c for c in d["channels"]}
         self.assertEqual(set(found), {"Nova Slow Rock", "Louvores de Paz", "Shorts Music"})  # C antigo, D poucas views
@@ -182,7 +192,7 @@ class TestChannelFinder(Base):
         paths = [p for p, _ in FakeYT.log]
         self.assertEqual(paths.count("/search"), 2)
         # a mesma busca de novo vem do cache: não gasta cota
-        st, d2 = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 30, "video_days": 30, "min_views": 100000})
+        st, d2 = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 30, "video_days": 30, "min_views": 100000, "ai_only": False})
         self.assertEqual(d2["stats"]["units"], 0)
         self.assertGreater(d2["stats"]["cached_calls"], 0)
         self.assertEqual(len(d2["channels"]), 3)
@@ -190,16 +200,16 @@ class TestChannelFinder(Base):
 
     def test_3_filters(self):
         self.post("/api/channels/settings", {"api_key": KEY})
-        st, d = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 7, "video_days": 30, "min_views": 100000})
+        st, d = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 7, "video_days": 30, "min_views": 100000, "ai_only": False})
         self.assertEqual([c["title"] for c in d["channels"]], ["Nova Slow Rock"])         # só o de 5 dias
-        st, d = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 30, "min_views": 0, "min_subs": 1000})
+        st, d = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 30, "min_views": 0, "min_subs": 1000, "ai_only": False})
         self.assertEqual({c["title"] for c in d["channels"]}, {"Nova Slow Rock", "Shorts Music"})
-        st, d = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 30, "min_views": 0})
+        st, d = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 30, "min_views": 0, "ai_only": False})
         tiny = next(c for c in d["channels"] if c["title"] == "Tiny Beats")
         self.assertIsNone(tiny["subs"])                                                    # inscritos ocultos
         self.assertEqual(tiny["monetization"]["status"], "desconhecido")
         FakeYT.log.clear()
-        st, d = self.post("/api/channels/search", {"depth": "rapida", "duration": "long", "keywords": ["playlist"], "lang": "en"})
+        st, d = self.post("/api/channels/search", {"depth": "rapida", "duration": "long", "keywords": ["playlist"], "lang": "en", "ai_only": False})
         q = [q for p, q in FakeYT.log if p == "/search"][0]
         self.assertEqual((q["videoDuration"], q["q"], q["relevanceLanguage"]), ("long", "playlist", "en"))
         self.assertEqual({c["title"] for c in d["channels"]}, {"Nova Slow Rock"})
@@ -213,9 +223,28 @@ class TestChannelFinder(Base):
         self.assertEqual(d["searches"], 2)
         self.post("/api/channels/settings", {"api_key": KEY})
         FakeYT.log.clear()
-        self.post("/api/channels/search", {"depth": "normal", "keywords": ["sad songs"]})
+        self.post("/api/channels/search", {"depth": "normal", "keywords": ["sad songs"], "ai_only": False})
         regions = {q.get("regionCode", "") for p, q in FakeYT.log if p == "/search"}
         self.assertEqual(regions, {"", "US", "BR", "MX", "IN", "ID", "PH", "DE"})
+
+    def test_8_ai_only_default(self):
+        """Padrão: só canais de música feita com IA, buscando vídeos que falam de IA."""
+        self.post("/api/channels/settings", {"api_key": KEY})
+        FakeYT.log.clear()
+        st, d = self.post("/api/channels/search", {"depth": "rapida", "channel_days": 30, "min_views": 100000})
+        self.assertEqual(st, 200, d)
+        q = [q for p, q in FakeYT.log if p == "/search"][0]
+        self.assertEqual(q["q"], "ai music|suno|udio|ai song")
+        found = {c["title"]: c["ai"] for c in d["channels"]}
+        self.assertEqual(set(found), {"Nova Slow Rock", "Louvores de Paz"})          # Shorts Music não é IA ("ai ai ai")
+        self.assertEqual(found["Nova Slow Rock"]["level"], "declarada")
+        self.assertIn("menciona Suno", found["Nova Slow Rock"]["reasons"])
+        self.assertEqual(found["Louvores de Paz"]["level"], "indicio")
+        self.assertIn("descrição do canal fala em IA", found["Louvores de Paz"]["reasons"])
+        FakeYT.log.clear()
+        self.post("/api/channels/search", {"depth": "rapida", "keywords": ["soft rock"]})
+        q = [q for p, q in FakeYT.log if p == "/search"][0]
+        self.assertEqual(q["q"], "soft rock ai|soft rock suno|soft rock udio")
 
     def test_5_api_errors(self):
         for key, text in [("AIzaSyBAD_xxxxxxxxxxxxxxxxxxxxxxxxxxxx", "inválida"),

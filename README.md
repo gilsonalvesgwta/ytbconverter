@@ -10,8 +10,9 @@ Endereço: **https://ytbconversor.wtatech.com.br**
 
 ## Achar canais (aba "Achar canais")
 
-Encontra canais de música **novos** (criados há até 7, 14, 30, 60, 90 dias ou 6 meses) com vídeos **recentes** e **muitas visualizações**, em qualquer lugar do mundo, usando a API oficial do YouTube.
+Encontra canais de **música feita com IA** (Suno, Udio…) **novos** (criados há até 7, 14, 30, 60, 90 dias ou 6 meses) com vídeos **recentes** e **muitas visualizações**, em qualquer lugar do mundo, usando a API oficial do YouTube.
 
+- **Só canais de IA (padrão):** as buscas vão direto em vídeos que mencionam IA (`ai music|suno|udio|ai song`, ou `gênero ai|gênero suno|gênero udio`) e cada canal é confirmado por três sinais: o selo oficial de conteúdo alterado/sintético que o criador marca no YouTube (**IA declarada**), menções a Suno/Udio/“AI music”/“feita com IA” no título, descrição ou tags (**Música de IA** / **Indício de IA**) e a descrição do canal. O motivo aparece no card. Canais que usam IA sem declarar em lugar nenhum não têm como ser identificados. Desmarque a opção para ver todos os canais.
 - **Filtros:** idade do canal, período dos vídeos, visualizações mínimas, duração (playlists longas, médios, curtos), idioma, mínimo de inscritos, gêneros prontos (playlist, lofi, worship, louvor, soft rock, sad songs…) e palavras-chave livres.
 - **Onde procurar:** varredura **Rápida** (mundo, ~200 unidades), **Normal** (8 regiões, ~800) ou **Profunda** (20 regiões, 2 páginas, ~4.000), ou um país específico.
 - **Resultado:** cada canal com pontuação de oportunidade, inscritos, views totais, **views por dia**, vídeos, país, idade, vídeo de destaque (views, views por hora, duração) e outros vídeos recentes. Ordena por oportunidade, views/dia, mais novos, vídeo mais visto, mais rápido ou inscritos.
